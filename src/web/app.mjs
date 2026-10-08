@@ -180,8 +180,20 @@ async function loadPackets() {
     return;
   }
   const authorities = [...new Set(caseState.tasks.map((t) => t.authority))];
+  let remembered;
+  try {
+    remembered = sessionStorage.getItem("oppna.authority." + caseState.id);
+  } catch {}
   if (!authorities.includes(selectedAuthority))
-    selectedAuthority = authorities[0];
+    selectedAuthority = authorities.includes(remembered)
+      ? remembered
+      : authorities[0];
+  try {
+    sessionStorage.setItem(
+      "oppna.authority." + caseState.id,
+      selectedAuthority,
+    );
+  } catch {}
   if (config.pilotEnabled)
     await api(`/api/cases/${caseState.id}/pilot-session`, {
       method: "POST",
