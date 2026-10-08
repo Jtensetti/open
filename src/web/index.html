@@ -6,24 +6,44 @@
     <title>ÖPPNA · Offentlig service. Enklare.</title>
     <meta name="description" content="Beskriv ditt ärende med egna ord." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="stylesheet" href="/app.css" />
-    <script type="module" src="/app.js"></script>
+    <link rel="stylesheet" href="/app.css?v=0.5.0" />
+    <script type="module" src="/app.js?v=0.5.0"></script>
   </head>
   <body data-save-state="loading">
+    <a class="skip-link" href="#intent">Hoppa till ärendet</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="ÖPPNA startsida"
         ><span class="brand-icon">ö</span> ÖPPNA</a
       ><span class="tagline">Offentlig service. Enklare.</span>
     </header>
+    <noscript
+      ><p class="service-message">
+        Testtjänsten behöver JavaScript för att tolka texten. Kontakta din
+        kommun om du behöver hjälp med ett verkligt ärende.
+      </p></noscript
+    >
     <div id="error-banner" role="alert" hidden></div>
+    <div id="recovery-actions" class="service-message" hidden>
+      <button id="retry-save" class="secondary">Försök igen</button>
+      <button id="copy-draft" class="secondary" hidden>
+        Spara en egen kopia
+      </button>
+      <button class="text-button" data-download-draft>
+        Hämta min text och mina uppgifter
+      </button>
+    </div>
+    <p
+      id="parser-announcement"
+      class="sr-only"
+      role="status"
+      aria-atomic="true"
+    ></p>
     <section id="identity-panel" class="panel staff-shell" hidden></section>
     <main class="workspace" id="citizen-workspace">
       <div class="citizen-column">
         <section class="panel intent-panel">
           <h1>Vad vill du göra?</h1>
-          <p class="intro">
-            Börja med din idé. Vi hjälper dig reda ut nästa steg.
-          </p>
+          <p class="intro">Testtjänst · inget skickas till en myndighet.</p>
           <label class="sr-only" for="intent">Beskriv ditt mål</label>
           <div class="input-wrap">
             <textarea
@@ -32,9 +52,22 @@
               disabled
               placeholder="Beskriv vad du vill göra och var…"
               spellcheck="true"
+              aria-describedby="draft-notice"
             ></textarea>
-            <div class="input-meta"><span id="count">0 / 3 000</span></div>
+            <div class="input-meta">
+              <span
+                id="save-status"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                >Läser in…</span
+              ><span id="count">0 / 3 000</span>
+            </div>
           </div>
+          <p id="draft-notice" class="sr-only">
+            Utkastet sparas automatiskt. Använd påhittade uppgifter utan
+            personnummer. Mer information finns under Om testtjänsten.
+          </p>
           <div id="question" hidden></div>
           <section id="facts">
             <div class="facts-heading"><h2>Det här har vi förstått</h2></div>
@@ -66,7 +99,10 @@
                 Händelser
               </button>
             </div>
-            <span class="live"><i></i> Live</span>
+            <span class="live"
+              ><i aria-hidden="true"></i
+              ><span id="system-status">Läser in</span></span
+            >
           </div>
           <div
             id="system-content"
@@ -88,5 +124,48 @@
         <div id="staff-standalone"></div>
       </section>
     </main>
+    <footer class="service-info">
+      <details>
+        <summary>Om testtjänsten</summary>
+        <div class="info-content">
+          <h2>Från text till uppgifter</h2>
+          <p>
+            ÖPPNA visar hur en beskrivning kan bli strukturerade uppgifter.
+            Handläggarvyn är en förhandsvisning av ditt eget utkast. Du gör
+            ingen ansökan och får inget myndighetsbeslut här. För ett verkligt
+            ärende behöver du kontakta ansvarig kommun eller myndighet.
+          </p>
+          <h3>Dina uppgifter</h3>
+          <p>
+            Använd bara påhittade uppgifter. Fritexten bearbetas i webbläsaren
+            och sparas tillfälligt i fliken. Tolkade uppgifter och korta
+            källutdrag sparas på servern med en ändringshistorik. Sessionen är
+            tillfällig och är inte knuten till en verifierad identitet.
+          </p>
+          <p>
+            Det finns ännu ingen fastställd gallringstid för testärenden.
+            Skyddet för personnummer är begränsat och upptäcker inte alla
+            personuppgifter. Tjänsten ska därför inte användas med verkliga
+            personuppgifter eller skyddade uppgifter.
+          </p>
+          <button class="text-button" data-download-draft>
+            Hämta min text och mina uppgifter
+          </button>
+          <h3>Hjälp och tillgänglighet</h3>
+          <p>
+            Du kan använda tangentbord, förstora texten och ändra tolkade
+            uppgifter. Tjänstens tillgänglighet är inte fullständigt granskad.
+            Beskriv gärna vilket moment som inte fungerade när du rapporterar
+            ett fel. Lägg inte med personuppgifter.
+          </p>
+          <p>
+            <a href="https://github.com/Jtensetti/open/issues"
+              >Rapportera tekniskt fel på GitHub</a
+            >
+          </p>
+          <p class="version">Version 0.5.0</p>
+        </div>
+      </details>
+    </footer>
   </body>
 </html>

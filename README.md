@@ -6,7 +6,7 @@ Fritext, ärendegraf och handläggarens uppgiftstabell visas samtidigt och uppda
 
 **Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och API:ts pilotrollbyte fungerar bara med `DEPLOYMENT_MODE=pilot`.
 
-Version `0.4.0` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
+Version `0.5.0` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
 
 Publicerad pilot: https://open.tensetti.io
 
@@ -64,3 +64,6 @@ Domän- och API-tester använder riktig SQLite med komplettering, bedömning och
 | `db/schema.ts`, `drizzle/` | Databasschema och migrationshistorik |
 
 Se [arkitektur](docs/architecture.md), [drift](docs/deployment.md) och [produktionskontrakt](docs/production.md). OIDC-stödet behöver konfigureras med en verklig identitetsleverantör. Produktionsintag är stängt tills lokala profiler och anslutna mottagare är godkända.
+
+
+Version 0.5.0 förbättrar sparstatus, återhämtning vid nätfel och versionskonflikter, fältfel, tangentbordsfokus och skillnaden mellan tolkade och bekräftade uppgifter. Testläget stoppar vanliga personnummerformat i text och källutdrag. [Genomgång mot myndighetsvägledning och kommunala exempel](docs/service-audit.md) beskriver åtgärder och kvarvarande produktionshinder. Antalet ärendetyper är oförändrat.

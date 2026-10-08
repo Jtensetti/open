@@ -8,7 +8,7 @@ En framtida lokal modell kan implementeras bakom parsergränsen, men får bara f
 
 ## Beständigt tillstånd
 
-Varje kommando har `commandId` och `expectedRevision`. D1-batchen skriver tillstånd, händelser, aktörernas projektioner och outbox atomiskt. Samtidiga skrivningar får versionskonflikt; en idempotent omkörning får inte skapa dubbla händelser. UI visar konflikten och låter användaren läsa in senaste versionen innan nytt försök.
+Varje kommando har `commandId` och `expectedRevision`. D1-batchen skriver tillstånd, händelser, aktörernas projektioner och outbox atomiskt. Samtidiga skrivningar får versionskonflikt; en idempotent omkörning får inte skapa dubbla händelser. UI visar konflikten och erbjuder att spara den lokala inmatningen som ett separat utkast. Den andra vyns version skrivs inte över. Nätfel återförsöks med samma kommandonyckel; osparad fritext och bekräftade svar återställs inom samma webbläsarflik. Fulltexten skickas inte som API-fält, men fakta och källutdrag skickas.
 
 Händelserna har en SHA-256-kedja som verifieras vid läsning. Detta upptäcker ändrade poster men är **inte** extern tidsstämpling, digital signatur eller skydd mot en administratör som skriver om hela kedjan. Nuvarande pilot verifierar hela kedjan; paginering och extern förankring krävs inför hög volym.
 

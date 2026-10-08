@@ -3,8 +3,18 @@ import {
   registry,
   DEFAULT_SCENARIO_ID,
 } from "../domain/catalog.mjs";
-import { diagnose, matches, validDate, scenarioFor } from "../domain/core.mjs";
+import {
+  diagnose,
+  matches,
+  validDate,
+  validateValue,
+  scenarioFor,
+} from "../domain/core.mjs";
 import { parseIntake, detectIntent } from "../domain/intake-parser.mjs";
+import {
+  containsPersonalNumberIn,
+  PILOT_DATA_MESSAGE,
+} from "../domain/pilot-data.mjs";
 let scenario = registry[DEFAULT_SCENARIO_ID];
 const $ = (q) => document.querySelector(q),
   escape = (s) =>
@@ -39,13 +49,21 @@ const clock = (t) =>
     second: "2-digit",
   }).format(new Date(t));
 async function api(path, { method = "GET", body } = {}) {
-  const r = await fetch(path, {
-    method,
-    credentials: "same-origin",
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await r.json();
+  let r, data;
+  try {
+    r = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(15000),
+    });
+    data = await r.json();
+  } catch {
+    throw new Error(
+      "Kunde inte nå tjänsten. Din inmatning finns kvar här. Kontrollera anslutningen och försök igen.",
+    );
+  }
   if (!r.ok) {
     const e = new Error(data.error?.message || "Åtgärden misslyckades.");
     e.status = r.status;
@@ -69,7 +87,29 @@ let goalConfirmed = false,
 let saveTimer,
   saveChain = Promise.resolve(),
   changeVersion = 0;
+let pendingCommand = null,
+  dirty = false,
+  conflict = false,
+  privacyBlocked = false,
+  announcementTimer,
+  historyError = false;
 const drafts = new Map();
+function setSaveState(state) {
+  document.body.dataset.saveState = state;
+  $("#save-status").textContent = {
+    loading: "Läser in…",
+    pending: "Osparade ändringar",
+    saving: "Sparar utkast…",
+    saved: "Utkast sparat",
+    error: "Inte sparat",
+    blocked: "Sparandet pausat",
+  }[state];
+  $("#system-status").textContent =
+    state === "saved" ? "Sparat" : state === "loading" ? "Läser in" : "Lokalt";
+  $("#retry-save").hidden = conflict || privacyBlocked;
+  $("#copy-draft").hidden = !conflict;
+  $("#recovery-actions").hidden = !["error", "blocked"].includes(state);
+}
 function setError(message) {
   $("#error-banner").hidden = !message;
   $("#error-banner").textContent = message || "";
@@ -77,17 +117,64 @@ function setError(message) {
 async function run(fn) {
   try {
     await fn();
-    setError("");
   } catch (e) {
-    setError(e.message);
-    document.body.dataset.saveState = "error";
+    if (e.code === "REVISION_CONFLICT") {
+      conflict = true;
+      cacheDraft();
+    }
+    setError(
+      e.status === 401
+        ? "Sessionen har gått ut. Hämta din text och dina uppgifter innan du laddar om sidan."
+        : conflict
+          ? "En annan vy har ändrat utkastet. Du kan spara din inmatning som en egen kopia utan att skriva över den andra versionen."
+          : e.message,
+    );
+    setSaveState("error");
   }
 }
 function storeRaw(text) {
-  if (!caseState) return;
+  if (!caseState || privacyBlocked) return;
   try {
     sessionStorage.setItem("oppna.raw." + caseState.id, text);
   } catch {}
+}
+function snapshot() {
+  return {
+    raw: $("#intent").value,
+    scenarioId: scenario.id,
+    facts: structuredClone(localFacts),
+    inputStatus: inputStatus(),
+    inputReasons: [
+      ...parsed.unsupported,
+      ...parsed.uncertain.filter((x) => x.key === "goal").map((x) => x.message),
+    ],
+  };
+}
+function cacheDraft() {
+  if (!caseState || privacyBlocked) return;
+  try {
+    sessionStorage.setItem(
+      "oppna.draft." + caseState.id,
+      JSON.stringify({
+        ...snapshot(),
+        goalConfirmed,
+        baseRevision: caseState.revision,
+        pendingCommand,
+        conflict,
+      }),
+    );
+  } catch {}
+}
+function pauseForPrivateData(data) {
+  privacyBlocked = !!config?.pilotEnabled && containsPersonalNumberIn(data);
+  $("#intent").setAttribute("aria-invalid", String(privacyBlocked));
+  if (!privacyBlocked) return false;
+  clearTimeout(saveTimer);
+  changeVersion++;
+  dirty = true;
+  setError(PILOT_DATA_MESSAGE);
+  setSaveState("blocked");
+  return true;
 }
 function inputStatus() {
   return parsed.unsupported.length
@@ -105,78 +192,118 @@ function hasGoal() {
   );
 }
 async function loadEvents() {
-  const data = await api(`/api/cases/${caseState.id}/events`);
-  events = data.events;
-  auditVerified = data.verified;
+  try {
+    const data = await api(`/api/cases/${caseState.id}/events`);
+    events = data.events;
+    auditVerified = data.verified;
+    historyError = false;
+  } catch {
+    historyError = true;
+    auditVerified = false;
+  }
+}
+async function deliverPendingCommand() {
+  if (!pendingCommand) return;
+  const attempt = pendingCommand;
+  let response;
+  try {
+    response = await api(`/api/cases/${caseState.id}/commands`, {
+      method: "POST",
+      body: attempt,
+    });
+  } catch (e) {
+    if (e.code === "REVISION_CONFLICT") {
+      conflict = true;
+      cacheDraft();
+    }
+    throw e;
+  }
+  caseState = response.case;
+  pendingCommand = null;
+  cacheDraft();
+  // A replay can return a newer state written by another tab. Do not overwrite it.
+  if (response.replayed && caseState.revision > attempt.expectedRevision + 1)
+    throw Object.assign(new Error("Utkastet har ändrats."), {
+      code: "REVISION_CONFLICT",
+    });
 }
 async function command(command) {
-  const response = await api(`/api/cases/${caseState.id}/commands`, {
-    method: "POST",
-    body: {
-      commandId: crypto.randomUUID(),
-      expectedRevision: caseState.revision,
-      command,
-    },
-  });
-  caseState = response.case;
+  pendingCommand = {
+    commandId: crypto.randomUUID(),
+    expectedRevision: caseState.revision,
+    command,
+  };
+  cacheDraft();
+  await deliverPendingCommand();
 }
 function scheduleSave() {
   clearTimeout(saveTimer);
   changeVersion++;
-  document.body.dataset.saveState = "pending";
+  dirty = true;
+  cacheDraft();
+  if (conflict || privacyBlocked) return;
+  setError("");
+  setSaveState("pending");
   saveTimer = setTimeout(() => run(saveFacts), 500);
 }
 async function saveFacts() {
+  if (conflict || pauseForPrivateData([$("#intent").value, localFacts])) return;
   const version = changeVersion;
-  const snapshot = {
-    raw: $("#intent").value,
-    scenarioId: scenario.id,
-    facts: structuredClone(localFacts),
-    inputStatus: inputStatus(),
-    inputReasons: [
-      ...parsed.unsupported,
-      ...parsed.uncertain.filter((x) => x.key === "goal").map((x) => x.message),
-    ],
-  };
+  const captured = snapshot();
   // Serialize scenario changes and facts against the latest server revision. A slow
   // response must never replace newer text or facts in the user's local view.
   saveChain = saveChain
     .catch(() => {})
     .then(async () => {
-      if (version !== changeVersion) return;
-      document.body.dataset.saveState = "saving";
+      if (version !== changeVersion || conflict) return;
+      setSaveState("saving");
+      await deliverPendingCommand();
+      if (version !== changeVersion || privacyBlocked) return;
       if (caseState.submitted) {
         caseState = (
           await api("/api/cases", {
             method: "POST",
-            body: { scenarioId: snapshot.scenarioId },
+            body: { scenarioId: captured.scenarioId },
           })
         ).case;
         storeRaw($("#intent").value);
       }
-      if (caseState.scenarioId !== snapshot.scenarioId)
+      if (caseState.scenarioId !== captured.scenarioId)
         await command({
           type: "select_scenario",
-          scenarioId: snapshot.scenarioId,
+          scenarioId: captured.scenarioId,
         });
       await command({
         type: "replace_facts",
-        facts: snapshot.facts,
-        inputStatus: snapshot.inputStatus,
-        inputReasons: snapshot.inputReasons,
+        facts: captured.facts,
+        inputStatus: captured.inputStatus,
+        inputReasons: captured.inputReasons,
       });
       try {
-        sessionStorage.setItem("oppna.savedRaw." + caseState.id, snapshot.raw);
+        sessionStorage.setItem("oppna.savedRaw." + caseState.id, captured.raw);
       } catch {}
+      if (version === changeVersion) {
+        dirty = false;
+        setError("");
+        setSaveState("saved");
+        try {
+          sessionStorage.removeItem("oppna.draft." + caseState.id);
+        } catch {}
+      }
       await loadEvents();
-      if (version === changeVersion) document.body.dataset.saveState = "saved";
       renderSystem();
       renderAuthority();
     });
-  await saveChain;
+  try {
+    await saveChain;
+  } catch (e) {
+    if (version === changeVersion || e.code === "REVISION_CONFLICT") throw e;
+  }
 }
 function parseInput() {
   const text = $("#intent").value;
+  $("#count").textContent = `${text.length} / 3 000`;
+  if (pauseForPrivateData(text)) return;
   const intent = detectIntent(text, SCENARIOS);
   const check = parseIntake(text, scenario);
   if (intent.goal && intent.goal !== scenario.id && !check.unsupported.length) {
@@ -232,6 +359,12 @@ function parseInput() {
   storeRaw(text);
   scheduleSave();
   render();
+  clearTimeout(announcementTimer);
+  announcementTimer = setTimeout(() => {
+    $("#parser-announcement").textContent = hasGoal()
+      ? `${scenario.title}. ${Object.keys(localFacts).length} uppgifter. ${diagnose(scenario, localFacts).questions.length} frågor kvar.`
+      : $("#question h3")?.textContent || "Inga uppgifter ännu.";
+  }, 900);
 }
 function questionMarkup() {
   if (!$("#intent").value.trim() && !hasGoal()) return "";
@@ -273,12 +406,12 @@ function questionMarkup() {
         q.type === "enum"
           ? `<select id="answer" name="answer" class="field" data-draft="field.${q.key}" required aria-label="${escape(q.question)}"><option value="">Välj…</option>${q.options.map((v) => `<option ${v === current ? "selected" : ""}>${escape(v)}</option>`).join("")}</select>`
           : `<input id="answer" name="answer" class="field" data-draft="field.${q.key}" type="${q.type === "number" ? "number" : q.type === "date" ? "date" : "text"}" value="${escape(current)}" ${q.type === "number" ? `min="${q.min}" max="${q.max}" step="1"` : `maxlength="${q.max || 160}"`} placeholder="${escape(q.key === "address" ? "Gatuadress och ort" : q.placeholder || "")}" required aria-label="${escape(q.question)}">`;
-      control = `<form data-answer-form="${q.key}" class="answer-form">${field}<button class="primary" type="submit">Bekräfta</button></form>`;
+      control = `<form data-answer-form="${q.key}" class="answer-form" novalidate>${field}<button class="primary" type="submit">Bekräfta</button><p id="answer-error" class="field-error" role="alert" hidden></p></form>`;
     }
     return `<div class="question-box ${q.kind === "uncertain" ? "uncertain" : ""}"><div class="question-label">${q.kind === "uncertain" ? "Bekräfta tolkningen" : q.kind === "edit" ? "Ändra uppgift" : "Nästa fråga"}<span>${diagnosis.questions.length} kvar</span></div><h3>${escape(q.question)}</h3>${q.kind === "uncertain" ? `<blockquote>”${escape(localFacts[q.key]?.source)}”</blockquote>` : ""}${q.help ? `<details class="question-help"><summary>Hjälp med svaret</summary><p>${escape(q.help)}</p></details>` : ""}${control}${editKey ? '<button class="text-button cancel-edit" data-cancel-edit>Avbryt ändring</button>' : ""}</div>`;
   }
 
-  return "";
+  return '<div class="question-box ready"><h3>Underlaget är ifyllt</h3><p>Du kan ändra uppgifterna nedan. Inget har skickats in.</p></div>';
 }
 function renderCitizen() {
   $("#count").textContent = `${$("#intent").value.length} / 3 000`;
@@ -293,13 +426,13 @@ function renderCitizen() {
       )
     : [];
   $("#facts").innerHTML =
-    `<div class="facts-heading"><h2>Det här har vi förstått</h2>${hasGoal() ? `<span>${d.completeCount} / ${d.requiredCount} klara</span>` : ""}</div>
-    ${hasGoal() ? `<div class="progress"><i style="width:${(d.completeCount / Math.max(1, d.requiredCount)) * 100}%"></i></div>` : '<p class="empty-state">Inga uppgifter ännu.</p>'}
+    `<div class="facts-heading"><h2>Det här har vi förstått</h2>${hasGoal() ? `<span>${d.completeCount} / ${d.requiredCount} ifyllda</span>` : ""}</div>
+    ${hasGoal() ? `<div class="progress" role="progressbar" aria-label="Ifyllda uppgifter" aria-valuemin="0" aria-valuemax="${Math.max(1, d.requiredCount)}" aria-valuenow="${d.completeCount}"><i style="width:${(d.completeCount / Math.max(1, d.requiredCount)) * 100}%"></i></div>` : '<p class="empty-state">Inga uppgifter ännu.</p>'}
     ${parsed.corrections.map((c) => `<p class="correction">”${escape(c.from)}” tolkades som ”${escape(c.to)}”</p>`).join("")}
     ${active
       .map(([key, def]) => {
         const f = localFacts[key];
-        return `<details class="fact-row" data-fact="${key}"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}" aria-hidden="true">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${escape(def.label)}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : "Saknas"}</strong></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p>${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäker tolkning" : "Tolkat från din beskrivning"}</p>` : ""}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
+        return `<details class="fact-row" data-fact="${key}"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}" aria-hidden="true">${!f ? "?" : f.status === "uncertain" ? "!" : f.status === "confirmed" ? "✓" : "·"}</span><span>${escape(def.label)}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : "Saknas"}${f ? `<small class="fact-status">${factStatus(f)}</small>` : ""}</strong></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p>${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäker tolkning" : "Tolkat från din beskrivning"}</p>` : ""}<button class="text-button" data-edit="${key}" aria-label="${f ? "Ändra eller bekräfta" : "Ange uppgift"}: ${escape(def.label)}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
       })
       .join("")}`;
 }
@@ -315,6 +448,29 @@ function highlight(o) {
 
 function renderSystem() {
   if (!caseState) return;
+  const container = $("#system-content");
+  const focusId = container.contains(document.activeElement)
+    ? document.activeElement.id
+    : null;
+  const scrollers = [
+    ...container.querySelectorAll(".code, .tree, .events"),
+  ].map((el) => [el.className, el.scrollTop, el.scrollLeft]);
+  const openEvents = [...container.querySelectorAll(".event[open]")].map(
+    (el) => el.id,
+  );
+  function restoreSystemView() {
+    for (const id of openEvents)
+      document.getElementById(id)?.setAttribute("open", "");
+    for (const [name, top, left] of scrollers) {
+      const el = container.querySelector("." + name);
+      if (el) {
+        el.scrollTop = top;
+        el.scrollLeft = left;
+      }
+    }
+    if (focusId)
+      document.getElementById(focusId)?.focus({ preventScroll: true });
+  }
   $("#case-ref").textContent = "case / " + caseState.id.slice(0, 8);
   document.querySelectorAll("[data-system-tab]").forEach((b) => {
     const active = b.dataset.systemTab === tab;
@@ -327,15 +483,16 @@ function renderSystem() {
   );
   if (tab === "events") {
     $("#system-content").innerHTML =
-      `<div class="events"><div class="audit-status">${auditVerified ? "✓ Händelsekedjan är verifierad" : ""}</div>${[
+      `<div class="events">${historyError ? '<p class="history-error">Historiken kunde inte hämtas. Utkastets sparstatus visas vid textfältet. <button class="text-button" data-retry-history>Försök hämta historiken igen</button></p>' : ""}<div class="audit-status">${auditVerified ? "✓ Händelsekedjan är verifierad" : ""}</div>${[
         ...events,
       ]
         .reverse()
         .map(
           (e) =>
-            `<details class="event"><summary><time>${clock(e.at)}</time><span>${escape(e.type)}<small>#${e.sequence} · ${escape(e.actor.role)}</small></span></summary><pre>${escape(JSON.stringify(e.data, null, 2))}</pre></details>`,
+            `<details class="event" id="event-${e.sequence}"><summary id="event-summary-${e.sequence}"><time>${clock(e.at)}</time><span>${escape(e.type)}<small>#${e.sequence} · ${escape(e.actor.role)}</small></span></summary><pre>${escape(JSON.stringify(e.data, null, 2))}</pre></details>`,
         )
         .join("")}</div>`;
+    restoreSystemView();
     return;
   }
   const d = hasGoal()
@@ -382,7 +539,7 @@ function renderSystem() {
     ],
   };
   $("#system-content").innerHTML =
-    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>${escape(goal || "—")}</span></div><div><strong>facts <em>${Object.keys(visibleFacts).length}</em></strong>${Object.entries(
+    `<div class="graph-code"><div class="tree" id="case-tree" tabindex="0" aria-label="Ärendets träd"><b>◉ case</b><div><strong>goal</strong><span>${escape(goal || "—")}</span></div><div><strong>facts <em>${Object.keys(visibleFacts).length}</em></strong>${Object.entries(
       visibleFacts,
     )
       .map(
@@ -391,7 +548,15 @@ function renderSystem() {
       )
       .join(
         "",
-      )}</div><div><strong>missing</strong>${d.missing.map((k) => `<span class="amber">${escape(k)}</span>`).join("") || '<span class="dim">[ ]</span>'}</div><div><strong>uncertain</strong>${data.uncertain.map((k) => `<span class="amber">${escape(k)}</span>`).join("") || '<span class="dim">[ ]</span>'}</div></div><pre class="code" tabindex="0" aria-label="Ärendets JSON">${highlight(data)}</pre></div>`;
+      )}</div><div><strong>missing</strong>${d.missing.map((k) => `<span class="amber">${escape(k)}</span>`).join("") || '<span class="dim">[ ]</span>'}</div><div><strong>uncertain</strong>${data.uncertain.map((k) => `<span class="amber">${escape(k)}</span>`).join("") || '<span class="dim">[ ]</span>'}</div></div><pre id="case-json" class="code" tabindex="0" aria-label="Ärendets JSON">${highlight(data)}</pre></div>`;
+  restoreSystemView();
+}
+function factStatus(f) {
+  return f.status === "confirmed"
+    ? "Bekräftat av dig"
+    : f.status === "uncertain"
+      ? "Osäker tolkning"
+      : "Tolkat · ej bekräftat";
 }
 function factsTable(facts, spec) {
   return `<table><caption class="sr-only">Strukturerade ärendeuppgifter</caption><tbody>${Object.entries(
@@ -400,7 +565,7 @@ function factsTable(facts, spec) {
     .filter(([k]) => k !== "citizen_note")
     .map(
       ([k, f]) =>
-        `<tr data-field="${escape(k)}"><th scope="row">${escape(spec.fields[k]?.label || k)}</th><td>${escape(value(k, f.value, spec))}${f.status === "uncertain" ? '<small class="uncertain-value">Osäker tolkning</small>' : ""}</td></tr>`,
+        `<tr data-field="${escape(k)}"><th scope="row">${escape(spec.fields[k]?.label || k)}</th><td>${escape(value(k, f.value, spec))}<small class="fact-status ${f.status === "uncertain" ? "uncertain-value" : ""}">${factStatus(f)}</small></td></tr>`,
     )
     .join("")}</tbody></table>`;
 }
@@ -437,8 +602,46 @@ function render() {
     }
   }
 }
+function focusQuestion() {
+  const heading = $("#question h3") || $("#facts h2");
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+}
+function answerError(message) {
+  const error = $("#answer-error"),
+    input = $("#answer");
+  if (error) {
+    error.textContent = message;
+    error.hidden = false;
+  }
+  if (input) {
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", "answer-error");
+    input.focus();
+  }
+}
 function explicitAnswer(key, v, uncertain = false) {
-  if (scenario.fields[key].type === "number") v = Number(v);
+  const field = scenario.fields[key];
+  if (typeof v === "string") v = v.trim();
+  if (config.pilotEnabled && containsPersonalNumberIn(v)) {
+    answerError(PILOT_DATA_MESSAGE);
+    return;
+  }
+  if (field.type === "number" && v !== "") v = Number(v);
+  if (!validateValue(field, v)) {
+    answerError(
+      field.type === "number"
+        ? `Ange ett heltal mellan ${field.min} och ${field.max}.`
+        : field.type === "enum"
+          ? "Välj ett av alternativen."
+          : field.type === "date"
+            ? "Ange ett giltigt datum mellan år 2000 och 2099."
+            : `Ange ${field.min}–${field.max} tecken för ${field.label.toLowerCase()}.`,
+    );
+    return;
+  }
   localFacts[key] = {
     value: v,
     status: uncertain ? "uncertain" : "confirmed",
@@ -453,6 +656,7 @@ function explicitAnswer(key, v, uncertain = false) {
   editKey = null;
   scheduleSave();
   render();
+  focusQuestion();
 }
 $("#intent").addEventListener("input", parseInput);
 document.addEventListener("input", (e) => {
@@ -462,22 +666,81 @@ document.addEventListener("input", (e) => {
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.id === "retry-save" || b.id === "copy-draft")
+    run(async () => {
+      b.disabled = true;
+      setError("");
+      try {
+        if (!caseState) return await boot();
+        if (b.id === "copy-draft") {
+          if (pauseForPrivateData([$("#intent").value, localFacts])) return;
+          caseState = (
+            await api("/api/cases", {
+              method: "POST",
+              body: { scenarioId: scenario.id },
+            })
+          ).case;
+          conflict = false;
+          pendingCommand = null;
+          storeRaw($("#intent").value);
+        }
+        clearTimeout(saveTimer);
+        changeVersion++;
+        cacheDraft();
+        await saveFacts();
+      } finally {
+        b.disabled = false;
+      }
+    });
+  if (b.hasAttribute("data-download-draft")) {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            version: "0.5.0",
+            kind: "local_draft",
+            submitted: false,
+            saved: !dirty && !!caseState,
+            interpretationPaused: privacyBlocked,
+            ...snapshot(),
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob),
+      link = document.createElement("a");
+    link.href = url;
+    link.download = "oppna-utkast.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  if (b.hasAttribute("data-retry-history"))
+    run(async () => {
+      await loadEvents();
+      renderSystem();
+    });
   if (b.dataset.boolKey)
     explicitAnswer(b.dataset.boolKey, b.dataset.bool === "true");
   if (b.dataset.unsure) explicitAnswer(b.dataset.unsure, false, true);
   if (b.dataset.edit) {
     editKey = b.dataset.edit;
     render();
-    $("#answer")?.focus();
+    ($("#answer") || $("#question button"))?.focus();
   }
   if (b.hasAttribute("data-cancel-edit")) {
+    const key = editKey;
     editKey = null;
     render();
+    document.querySelector(`[data-edit="${key}"]`)?.focus();
   }
   if (b.hasAttribute("data-confirm-goal")) {
     goalConfirmed = true;
     scheduleSave();
     render();
+    focusQuestion();
   }
   if (b.dataset.systemTab) {
     tab = b.dataset.systemTab;
@@ -548,6 +811,7 @@ async function renderStandalone() {
   }
 }
 async function boot() {
+  setSaveState("loading");
   config = await api("/api/config");
   if (standalone) {
     await renderStandalone();
@@ -576,11 +840,40 @@ async function boot() {
   scenario = scenarioFor(caseState.scenarioId, caseState.scenarioVersion);
   localFacts = structuredClone(caseState.facts);
   let raw = "",
-    savedRaw = null;
+    savedRaw = null,
+    cached = null;
   try {
     raw = sessionStorage.getItem("oppna.raw." + caseState.id) || "";
     savedRaw = sessionStorage.getItem("oppna.savedRaw." + caseState.id);
+    const candidate = JSON.parse(
+      sessionStorage.getItem("oppna.draft." + caseState.id),
+    );
+    const spec = candidate && registry[candidate.scenarioId];
+    if (
+      spec &&
+      typeof candidate.raw === "string" &&
+      candidate.raw.length <= 3000 &&
+      candidate.facts &&
+      !Array.isArray(candidate.facts) &&
+      Object.keys(candidate.facts).length <= 30 &&
+      Object.entries(candidate.facts).every(
+        ([key, f]) =>
+          spec.fields[key] && f && validateValue(spec.fields[key], f.value),
+      ) &&
+      !(config.pilotEnabled && containsPersonalNumberIn(candidate))
+    )
+      cached = candidate;
   } catch {}
+  if (cached) {
+    scenario = registry[cached.scenarioId];
+    localFacts = cached.facts;
+    raw = cached.raw;
+    pendingCommand = cached.pendingCommand || null;
+    conflict =
+      !!cached.conflict ||
+      (cached.baseRevision !== caseState.revision && !pendingCommand);
+    dirty = true;
+  }
   $("#intent").value = raw;
   parsed = parseIntake(raw, scenario);
   // Saved structured data can exist without the browser-local original text.
@@ -591,11 +884,23 @@ async function boot() {
   )
     parsed.goal = scenario.id;
   previousParsed = parsed;
-  goalConfirmed = caseState.inputStatus === "supported";
+  goalConfirmed = cached
+    ? !!cached.goalConfirmed
+    : caseState.inputStatus === "supported";
   await loadEvents();
   render();
-  document.body.dataset.saveState = "saved";
+  setError("");
+  setSaveState("saved");
   $("#intent").disabled = false;
+  if (pauseForPrivateData([raw, localFacts])) return;
+  if (conflict)
+    throw Object.assign(new Error("Utkastet har ändrats."), {
+      code: "REVISION_CONFLICT",
+    });
+  if (cached) {
+    scheduleSave();
+    return;
+  }
   if (savedRaw !== null && raw !== savedRaw) {
     previousParsed = parseIntake(savedRaw, scenario);
     parseInput();
@@ -623,4 +928,13 @@ async function boot() {
     }
   }
 }
+window.addEventListener("beforeunload", (e) => {
+  if (dirty) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+window.addEventListener("online", () => {
+  if (dirty && caseState && !conflict && !privacyBlocked) scheduleSave();
+});
 run(boot);
