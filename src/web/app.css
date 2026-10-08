@@ -206,6 +206,7 @@ button:hover:not(:disabled) {
   min-width: 0;
 }
 .panel {
+  min-width: 0;
   background: white;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -477,6 +478,11 @@ button:hover:not(:disabled) {
   font-weight: 450;
   color: #5d7585;
 }
+.fact-row summary > span,
+.fact-row summary > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .fact-row summary strong.missing-value {
   color: #92a1a9;
 }
@@ -650,6 +656,7 @@ button:hover:not(:disabled) {
   color: #5a7484;
 }
 .terminal {
+  min-width: 0;
   background: #11242c;
   color: #e3edf1;
   border-radius: 12px;
@@ -960,11 +967,13 @@ button:hover:not(:disabled) {
 }
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
 td,
 th {
+  overflow-wrap: anywhere;
   padding: 8px 1px;
   border-bottom: 1px solid #ecf1f4;
   vertical-align: top;

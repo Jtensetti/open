@@ -14,7 +14,8 @@
     "start": "node scripts/dev.mjs",
     "scenario:check": "node scripts/check-scenarios.mjs",
     "test:worker": "node tests/worker.mjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "format:check": "prettier --check src scripts tests db playwright.config.mjs drizzle.config.ts wrangler.jsonc"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
@@ -24,5 +25,11 @@
     "miniflare": "5.20261006.0-alpha",
     "prettier": "3.9.9",
     "wrangler": "^4.148.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
   }
 }

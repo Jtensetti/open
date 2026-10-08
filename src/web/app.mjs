@@ -136,7 +136,11 @@ async function loadCase(id, resetDraft = true) {
   if (resetDraft) {
     localFacts = structuredClone(caseState.facts);
     let text = readRaw();
-    if (!text && Object.keys(localFacts).length)
+    if (
+      !text &&
+      Object.keys(localFacts).length &&
+      caseState.inputStatus === "supported"
+    )
       text = "Jag vill öppna en restaurang i Trelleborg.";
     $("#intent").value = text;
     parsed = parseRestaurant(text);
@@ -427,9 +431,11 @@ function renderStandalone() {
 }
 function render() {
   const focused = document.activeElement?.id;
+  const scopeChecked = $("#confirm-scope")?.checked;
   const el = focused ? document.getElementById(focused) : null;
   const selection = el && "selectionStart" in el ? el.selectionStart : null;
   renderCitizen();
+  if (scopeChecked && $("#confirm-scope")) $("#confirm-scope").checked = true;
   if (!standalone) {
     renderTracking();
     renderSystem();

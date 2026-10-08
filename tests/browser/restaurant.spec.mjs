@@ -56,6 +56,26 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
     false,
   );
   expect(errors).toEqual([]);
+  const overflow = await page.evaluate(() =>
+    [...document.querySelectorAll("body *")]
+      .filter(
+        (el) =>
+          el.getBoundingClientRect().right > innerWidth + 1 &&
+          getComputedStyle(el).position !== "absolute",
+      )
+      .map((el) => ({
+        tag: el.tagName,
+        class: el.className,
+        right: el.getBoundingClientRect().right,
+      }))
+      .slice(0, 12),
+  );
+  if (
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth + 1,
+    )
+  )
+    console.log("Overflow:", JSON.stringify(overflow));
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
