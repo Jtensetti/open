@@ -25,3 +25,11 @@ export async function savedCase(page) {
   return (await (await page.request.get("/api/cases/" + cases[0].id)).json())
     .case;
 }
+
+export async function resumeDraft(page) {
+  await expect(page.locator("#intent")).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Återuppta utkast", exact: true })
+    .click();
+  await ready(page);
+}

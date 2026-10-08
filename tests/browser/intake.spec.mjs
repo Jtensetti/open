@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 
 test("open workspace has no default restaurant or extra navigation", async ({
   page,
@@ -72,6 +79,7 @@ test("uncertain and competing goals remain visible as uncertainty", async ({
   expect((await savedCase(page)).inputStatus).toBe("supported");
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   await expect(page.locator("[data-confirm-goal]")).toHaveCount(0);
   await describeCase(
     page,
@@ -117,6 +125,7 @@ test("slow saves cannot replace more recent input or facts", async ({
   expect((await savedCase(page)).facts.municipality.value).toBe("Kiruna");
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   await expect(page.locator("#intent")).toHaveValue(text);
   await expect(page.locator("#authority")).toContainText(
     "Installera värmepump",

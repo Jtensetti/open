@@ -1991,3 +1991,8 @@ body:has(noscript > p) .skip-link,
 body:has(noscript > p) [data-download-draft] {
   display: none;
 }
+
+#resume-draft {
+  display: block;
+  margin: -8px 0 18px;
+}

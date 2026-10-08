@@ -179,7 +179,7 @@ async function handle(request, env, ctx, assets) {
   if (!["GET", "HEAD"].includes(request.method)) requireOrigin(request);
   if (path === "/api/config" && request.method === "GET")
     return json({
-      version: "0.5.0",
+      version: "0.5.1",
       mode: env.DEPLOYMENT_MODE || "closed",
       scenario: registry[DEFAULT_SCENARIO_ID],
       scenarios: catalogSummary(),
@@ -199,7 +199,7 @@ async function handle(request, env, ctx, assets) {
     await env.DB.prepare(
       "SELECT state_hash FROM auth_transactions LIMIT 1",
     ).first();
-    return json({ status: "ok", version: "0.5.0" });
+    return json({ status: "ok", version: "0.5.1" });
   }
   if (path === "/api/readiness" && request.method === "GET")
     return json(readiness(env), env.DEPLOYMENT_MODE === "pilot" ? 200 : 503);

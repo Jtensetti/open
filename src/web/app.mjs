@@ -92,7 +92,9 @@ let pendingCommand = null,
   conflict = false,
   privacyBlocked = false,
   announcementTimer,
-  historyError = false;
+  historyError = false,
+  resumeId = null,
+  initialized = false;
 const drafts = new Map();
 function setSaveState(state) {
   document.body.dataset.saveState = state;
@@ -100,12 +102,18 @@ function setSaveState(state) {
     loading: "Läser in…",
     pending: "Osparade ändringar",
     saving: "Sparar utkast…",
-    saved: "Utkast sparat",
+    saved: caseState ? "Utkast sparat" : "Redo",
     error: "Inte sparat",
     blocked: "Sparandet pausat",
   }[state];
   $("#system-status").textContent =
-    state === "saved" ? "Sparat" : state === "loading" ? "Läser in" : "Lokalt";
+    state === "saved"
+      ? caseState
+        ? "Sparat"
+        : "Tomt"
+      : state === "loading"
+        ? "Läser in"
+        : "Lokalt";
   $("#retry-save").hidden = conflict || privacyBlocked;
   $("#copy-draft").hidden = !conflict;
   $("#recovery-actions").hidden = !["error", "blocked"].includes(state);
@@ -151,19 +159,22 @@ function snapshot() {
   };
 }
 function cacheDraft() {
-  if (!caseState || privacyBlocked) return;
+  if (privacyBlocked) return;
   try {
     sessionStorage.setItem(
-      "oppna.draft." + caseState.id,
+      "oppna.draft." + (caseState?.id || "new"),
       JSON.stringify({
         ...snapshot(),
         goalConfirmed,
-        baseRevision: caseState.revision,
+        baseRevision: caseState?.revision ?? 0,
         pendingCommand,
         conflict,
       }),
     );
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 function pauseForPrivateData(data) {
   privacyBlocked = !!config?.pilotEnabled && containsPersonalNumberIn(data);
@@ -192,6 +203,12 @@ function hasGoal() {
   );
 }
 async function loadEvents() {
+  if (!caseState) {
+    events = [];
+    auditVerified = false;
+    historyError = false;
+    return;
+  }
   try {
     const data = await api(`/api/cases/${caseState.id}/events`);
     events = data.events;
@@ -259,7 +276,7 @@ async function saveFacts() {
       setSaveState("saving");
       await deliverPendingCommand();
       if (version !== changeVersion || privacyBlocked) return;
-      if (caseState.submitted) {
+      if (!caseState || caseState.submitted) {
         caseState = (
           await api("/api/cases", {
             method: "POST",
@@ -267,6 +284,11 @@ async function saveFacts() {
           })
         ).case;
         storeRaw($("#intent").value);
+        if (cacheDraft()) {
+          try {
+            sessionStorage.removeItem("oppna.draft.new");
+          } catch {}
+        }
       }
       if (caseState.scenarioId !== captured.scenarioId)
         await command({
@@ -302,6 +324,7 @@ async function saveFacts() {
 }
 function parseInput() {
   const text = $("#intent").value;
+  $("#resume-draft").hidden = true;
   $("#count").textContent = `${text.length} / 3 000`;
   if (pauseForPrivateData(text)) return;
   const intent = detectIntent(text, SCENARIOS);
@@ -447,7 +470,6 @@ function highlight(o) {
 }
 
 function renderSystem() {
-  if (!caseState) return;
   const container = $("#system-content");
   const focusId = container.contains(document.activeElement)
     ? document.activeElement.id
@@ -471,7 +493,7 @@ function renderSystem() {
     if (focusId)
       document.getElementById(focusId)?.focus({ preventScroll: true });
   }
-  $("#case-ref").textContent = "case / " + caseState.id.slice(0, 8);
+  $("#case-ref").textContent = "case / " + (caseState?.id.slice(0, 8) || "—");
   document.querySelectorAll("[data-system-tab]").forEach((b) => {
     const active = b.dataset.systemTab === tab;
     b.setAttribute("aria-selected", String(active));
@@ -501,7 +523,7 @@ function renderSystem() {
   const goal = hasGoal() ? scenario.id : null;
   const visibleFacts = hasGoal() ? localFacts : {};
   const data = {
-    case_id: caseState.id,
+    case_id: caseState?.id || null,
     scenario: goal,
     input_status: inputStatus(),
     ...(parsed.goals?.length
@@ -666,12 +688,30 @@ document.addEventListener("input", (e) => {
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.id === "resume-draft" && !dirty && resumeId) {
+    run(async () => {
+      b.disabled = true;
+      $("#intent").disabled = true;
+      try {
+        await restoreDraft(resumeId);
+        b.hidden = true;
+      } finally {
+        b.disabled = false;
+        $("#intent").disabled = false;
+      }
+    });
+  }
   if (b.id === "retry-save" || b.id === "copy-draft")
     run(async () => {
       b.disabled = true;
       setError("");
       try {
-        if (!caseState) return await boot();
+        if (!initialized) return await boot();
+        if (!dirty && !caseState && resumeId && !$("#resume-draft").hidden) {
+          await restoreDraft(resumeId);
+          $("#resume-draft").hidden = true;
+          return;
+        }
         if (b.id === "copy-draft") {
           if (pauseForPrivateData([$("#intent").value, localFacts])) return;
           caseState = (
@@ -697,7 +737,7 @@ document.addEventListener("click", (e) => {
       [
         JSON.stringify(
           {
-            version: "0.5.0",
+            version: "0.5.1",
             kind: "local_draft",
             submitted: false,
             saved: !dirty && !!caseState,
@@ -834,20 +874,22 @@ async function boot() {
     $("#identity-panel").textContent = "Du har inga ärenden.";
     return;
   }
-  caseState = cases.length
-    ? (await api("/api/cases/" + cases[0].id)).case
-    : (await api("/api/cases", { method: "POST", body: {} })).case;
-  scenario = scenarioFor(caseState.scenarioId, caseState.scenarioVersion);
-  localFacts = structuredClone(caseState.facts);
-  let raw = "",
-    savedRaw = null,
-    cached = null;
+  // Never select the latest server case implicitly. The shared browser may
+  // contain a previous visitor's or tester's draft in the same pilot session.
+  initialized = true;
+  resumeId = readCachedDraft("new")
+    ? "new"
+    : cases.find((c) => c.revision > 0 || readCachedDraft(c.id))?.id || null;
+  $("#resume-draft").hidden = !resumeId;
+  $("#intent").value = "";
+  $("#intent").disabled = !config.pilotEnabled;
+  render();
+  setError("");
+  setSaveState("saved");
+}
+function readCachedDraft(id) {
   try {
-    raw = sessionStorage.getItem("oppna.raw." + caseState.id) || "";
-    savedRaw = sessionStorage.getItem("oppna.savedRaw." + caseState.id);
-    const candidate = JSON.parse(
-      sessionStorage.getItem("oppna.draft." + caseState.id),
-    );
+    const candidate = JSON.parse(sessionStorage.getItem("oppna.draft." + id));
     const spec = candidate && registry[candidate.scenarioId];
     if (
       spec &&
@@ -862,7 +904,26 @@ async function boot() {
       ) &&
       !(config.pilotEnabled && containsPersonalNumberIn(candidate))
     )
-      cached = candidate;
+      return candidate;
+  } catch {}
+  return null;
+}
+async function restoreDraft(id) {
+  caseState = id === "new" ? null : (await api("/api/cases/" + id)).case;
+  scenario = caseState
+    ? scenarioFor(caseState.scenarioId, caseState.scenarioVersion)
+    : registry[DEFAULT_SCENARIO_ID];
+  localFacts = structuredClone(caseState?.facts || {});
+  let raw = "",
+    savedRaw = null;
+  const cached = readCachedDraft(id);
+  if (id === "new" && !cached)
+    throw new Error(
+      "Det lokala utkastet finns inte längre. Börja med en ny beskrivning.",
+    );
+  try {
+    raw = sessionStorage.getItem("oppna.raw." + id) || "";
+    savedRaw = sessionStorage.getItem("oppna.savedRaw." + id);
   } catch {}
   if (cached) {
     scenario = registry[cached.scenarioId];
@@ -871,7 +932,7 @@ async function boot() {
     pendingCommand = cached.pendingCommand || null;
     conflict =
       !!cached.conflict ||
-      (cached.baseRevision !== caseState.revision && !pendingCommand);
+      (cached.baseRevision !== (caseState?.revision ?? 0) && !pendingCommand);
     dirty = true;
   }
   $("#intent").value = raw;
@@ -880,13 +941,13 @@ async function boot() {
   if (
     !raw &&
     Object.keys(localFacts).length &&
-    caseState.inputStatus === "supported"
+    caseState?.inputStatus === "supported"
   )
     parsed.goal = scenario.id;
   previousParsed = parsed;
   goalConfirmed = cached
     ? !!cached.goalConfirmed
-    : caseState.inputStatus === "supported";
+    : caseState?.inputStatus === "supported";
   await loadEvents();
   render();
   setError("");
@@ -935,6 +996,6 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 window.addEventListener("online", () => {
-  if (dirty && caseState && !conflict && !privacyBlocked) scheduleSave();
+  if (dirty && initialized && !conflict && !privacyBlocked) scheduleSave();
 });
 run(boot);

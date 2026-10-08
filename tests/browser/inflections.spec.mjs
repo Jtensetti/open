@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 
 test("all four reported deck formulations keep the case and manually entered facts", async ({
   page,
@@ -31,6 +38,7 @@ test("all four reported deck formulations keep the case and manually entered fac
   }
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   await expect(page.locator("#authority")).toContainText("Uppsala");
   expect((await savedCase(page)).inputStatus).toBe("supported");
 });
@@ -55,6 +63,7 @@ test("changing sentence length does not undo a manual correction; changed number
   expect((await savedCase(page)).facts.area.method).toBe("explicit");
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   expect((await savedCase(page)).facts.area.value).toBe(35);
   await describeCase(
     page,

@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 test("parser provenance, explicit answers, event history and privacy remain intact", async ({
   page,
 }) => {
@@ -28,6 +35,7 @@ test("parser provenance, explicit answers, event history and privacy remain inta
   ).toContainText("55");
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   await expect(
     page.locator('#authority [data-field="capacity"]'),
   ).toContainText("55");

@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 test("colloquial preschool and school applications show structured fields and survive reload", async ({
   page,
 }) => {
@@ -15,6 +22,7 @@ test("colloquial preschool and school applications show structured fields and su
   await expect(page.locator("#authority")).toContainText("Solrosen");
   await page.reload();
   await ready(page);
+  await resumeDraft(page);
   await expect(page.locator("#authority")).toContainText("3 år");
   await describeCase(
     page,

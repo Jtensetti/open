@@ -6,7 +6,7 @@ Fritext, ärendegraf och handläggarens uppgiftstabell visas samtidigt och uppda
 
 **Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och API:ts pilotrollbyte fungerar bara med `DEPLOYMENT_MODE=pilot`.
 
-Version `0.5.0` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
+Version `0.5.1` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
 
 Publicerad pilot: https://open.tensetti.io
 
@@ -67,3 +67,6 @@ Se [arkitektur](docs/architecture.md), [drift](docs/deployment.md) och [produkti
 
 
 Version 0.5.0 förbättrar sparstatus, återhämtning vid nätfel och versionskonflikter, fältfel, tangentbordsfokus och skillnaden mellan tolkade och bekräftade uppgifter. Testläget stoppar vanliga personnummerformat i text och källutdrag. [Genomgång mot myndighetsvägledning och kommunala exempel](docs/service-audit.md) beskriver åtgärder och kvarvarande produktionshinder. Antalet ärendetyper är oförändrat.
+
+
+Version 0.5.1 öppnar alltid en tom arbetsyta, även efter omladdning. Ett befintligt utkast visas först efter valet **Återuppta utkast**. Nytt utkast skapas när användaren skriver, inte vid sidöppning. Tidigare utkast bevaras när en ny beskrivning påbörjas. Testa lokalt med separat testdatabas; lägg inte exempel i användarens delade, publicerade webbläsarsession.

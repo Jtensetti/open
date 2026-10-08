@@ -6,8 +6,8 @@
     <title>ÖPPNA · Offentlig service. Enklare.</title>
     <meta name="description" content="Beskriv ditt ärende med egna ord." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="stylesheet" href="/app.css?v=0.5.0" />
-    <script type="module" src="/app.js?v=0.5.0"></script>
+    <link rel="stylesheet" href="/app.css?v=0.5.1" />
+    <script type="module" src="/app.js?v=0.5.1"></script>
   </head>
   <body data-save-state="loading">
     <a class="skip-link" href="#intent">Hoppa till ärendet</a>
@@ -65,9 +65,13 @@
             </div>
           </div>
           <p id="draft-notice" class="sr-only">
-            Utkastet sparas automatiskt. Använd påhittade uppgifter utan
-            personnummer. Mer information finns under Om testtjänsten.
+            Utkastet sparas automatiskt när du skriver. Använd påhittade
+            uppgifter utan personnummer. Mer information finns under Om
+            testtjänsten.
           </p>
+          <button id="resume-draft" class="text-button" hidden>
+            Återuppta utkast
+          </button>
           <div id="question" hidden></div>
           <section id="facts">
             <div class="facts-heading"><h2>Det här har vi förstått</h2></div>
@@ -163,7 +167,7 @@
               >Rapportera tekniskt fel på GitHub</a
             >
           </p>
-          <p class="version">Version 0.5.0</p>
+          <p class="version">Version 0.5.1</p>
         </div>
       </details>
     </footer>

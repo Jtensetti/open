@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 import { registry } from "../../src/domain/catalog.mjs";
 const representatives = [
   ["restaurant.se", "Öppna restaurang"],
@@ -38,6 +45,7 @@ for (const [id, title] of representatives) {
     ).toHaveCount(0);
     await page.reload();
     await ready(page);
+    await resumeDraft(page);
     await expect(page.locator("#authority")).toContainText(title);
     await expect(page.locator("#intent")).toHaveValue(text);
     expect(

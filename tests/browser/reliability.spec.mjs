@@ -1,4 +1,11 @@
-import { test, expect, ready, describeCase, savedCase } from "./helpers.mjs";
+import {
+  test,
+  expect,
+  ready,
+  describeCase,
+  savedCase,
+  resumeDraft,
+} from "./helpers.mjs";
 
 const garage = "Jag vill bygga garage i Uppsala på 40 kvm.";
 
@@ -41,6 +48,9 @@ test("an unsaved explicit answer survives a reload and can be retried", async ({
   await expect(page.locator("#save-status")).toHaveText("Inte sparat");
   page.on("dialog", (d) => d.accept());
   await page.reload();
+  await ready(page);
+  await expect(page.locator("#intent")).toHaveValue("");
+  await page.getByRole("button", { name: "Återuppta utkast" }).click();
   await expect(page.locator("#save-status")).toHaveText("Inte sparat");
   await expect(page.locator("#authority")).toContainText("hösten 2028");
   await page.unroute("**/api/cases/*/commands");
@@ -61,6 +71,7 @@ test("concurrent tabs preserve both versions by saving a separate copy", async (
   const other = await context.newPage();
   await other.goto("/");
   await ready(other);
+  await resumeDraft(other);
   await describeCase(page, garage.replace("40", "50"));
   await other.locator("#intent").fill(garage.replace("40", "60"));
   await expect(other.locator("#error-banner")).toContainText("annan vy");
