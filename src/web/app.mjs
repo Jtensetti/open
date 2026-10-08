@@ -183,12 +183,29 @@ function parseInput() {
     drafts.clear();
   }
   const next = parseIntake(text, scenario);
-  if (!text.trim() || next.unsupported.length || !next.goal) localFacts = {};
+  if (!text.trim()) localFacts = {};
+  else if (next.unsupported.length || !next.goal)
+    // A temporarily incomplete goal must not erase answers the user entered.
+    // Keep them on this draft; a genuinely different scenario clears them above.
+    localFacts = Object.fromEntries(
+      Object.entries(localFacts).filter(([, f]) => f.method === "explicit"),
+    );
   else
     for (const key of new Set([
       ...Object.keys(previousParsed.facts),
       ...Object.keys(next.facts),
     ])) {
+      const semantic = (f) =>
+        JSON.stringify([
+          f?.value,
+          f?.status,
+          f?.alternatives?.map((a) => [a.value, a.status]),
+        ]);
+      if (
+        localFacts[key]?.method === "explicit" &&
+        semantic(previousParsed.facts[key]) === semantic(next.facts[key])
+      )
+        continue;
       if (
         !localFacts[key] ||
         JSON.stringify(previousParsed.facts[key]) !==
@@ -205,7 +222,8 @@ function parseInput() {
   )
     goalConfirmed = false;
   parsed = next;
-  previousParsed = next;
+  if (!text.trim() || (next.goal && !next.unsupported.length))
+    previousParsed = next;
   editKey = null;
   storeRaw(text);
   scheduleSave();

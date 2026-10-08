@@ -13,9 +13,8 @@ import {
   isUncertain,
 } from "./extractors.mjs";
 import { diagnose, validateValue } from "./core.mjs";
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const action =
-  /(?:öppna|starta|arrangera|anordna|bygga|ändra|byta|installera|riva|beställa|placera|ordna|spela|förvara|anlägga|avsluta|stänga|anmäla|fråga|förbereda|ansluta|rapportera|gräva|felanmäl\w*|planera|boka|registrera)(?![\p{L}])/iu;
+import { action, aliasPattern, wordForms } from "./intent-language.mjs";
+const matchers = new WeakMap();
 const dangerous =
   /(?<![\p{L}])(?:kärnkraft|vapen|fyrverkeri\w*|sprängämne\w*|explosiv\w*|asyl|akutmottagning|vårdcentral)(?![\p{L}])/iu;
 export function detectIntent(input, scenarios = SCENARIOS) {
@@ -25,10 +24,20 @@ export function detectIntent(input, scenarios = SCENARIOS) {
   const goalText = text.split(
     /(?:detaljer|åtgärd|beskrivning|egen anteckning)\s*:/iu,
   )[0];
-  for (const s of scenarios) {
-    for (const alias of s.aliases) {
-      const pattern = escapeRe(alias).replace(/ /g, "\\s+(?:(?:en|ett)\\s+)?");
-      const re = new RegExp("(?<![\\p{L}])" + pattern + "(?![\\p{L}])", "giu");
+  if (!matchers.has(scenarios))
+    matchers.set(
+      scenarios,
+      scenarios.map((s) => ({
+        id: s.id,
+        patterns: s.aliases.map(aliasPattern),
+        fuzzyWords: s.aliases
+          .filter((a) => !a.includes(" "))
+          .flatMap(wordForms),
+      })),
+    );
+  const compiled = matchers.get(scenarios);
+  for (const s of compiled) {
+    for (const re of s.patterns) {
       for (const m of goalText.matchAll(re)) {
         const c = context(goalText, m.index),
           before = goalText.slice(c.start, m.index);
@@ -82,8 +91,8 @@ export function detectIntent(input, scenarios = SCENARIOS) {
   if (!goals.length) {
     for (const word of goalText.matchAll(/[\p{L}]+/gu)) {
       if (word[0].length < 6) continue;
-      const alternatives = scenarios.filter((s) =>
-        s.aliases.some(
+      const alternatives = compiled.filter((s) =>
+        s.fuzzyWords.some(
           (a) =>
             !a.includes(" ") &&
             Math.abs(a.length - word[0].length) <= 1 &&
