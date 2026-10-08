@@ -1,3 +1,4 @@
+import { aliasPattern } from "./intent-language.mjs";
 /** Pure browser-safe slot extractors. Offsets always refer to the original input. */
 export const normalize = (s) =>
   String(s)
@@ -32,7 +33,7 @@ export function context(text, index) {
   return { start, end: after < 0 ? text.length : index + after };
 }
 export const isUncertain = (s) =>
-  /(?<![\p{L}])(?:kanske|eventuellt|möjligen|osäker\w*|antingen|vet inte|ungefär)(?![\p{L}])/iu.test(
+  /(?<![\p{L}])(?:kanske|eventuellt|möjligen|osäker\w*|antingen|eller|vet inte|ungefär|cirka|omkring|eventuell\w*|möjlig\w*)(?![\p{L}])/iu.test(
     s,
   );
 export function editDistance(a, b) {
@@ -72,6 +73,7 @@ export function extractAddress(text) {
         if (
           base + w.index + w[0].length !== cursor ||
           !/^\p{Lu}/u.test(w[0]) ||
+          /[.!?]/u.test(w[0]) ||
           /^(Jag|Vi|På|Vid|Adress|Adressen)\s/.test(w[0])
         )
           break;
@@ -210,7 +212,11 @@ export function extractDate(text) {
   return { fact: f, invalid };
 }
 export function extractBoolean(text, words) {
-  const re = new RegExp("(?<![\\p{L}])(?:" + words + ")(?![\\p{L}])", "giu"),
+  const expanded = words
+    .split("|")
+    .map((w) => (/^[\p{L} -]+$/u.test(w) ? aliasPattern(w).source : w))
+    .join("|");
+  const re = new RegExp("(?<![\\p{L}])(?:" + expanded + ")(?![\\p{L}])", "giu"),
     evidence = [];
   for (const m of text.matchAll(re)) {
     const c = context(text, m.index);
@@ -219,18 +225,21 @@ export function extractBoolean(text, words) {
     if (conjunction)
       before = before.slice(conjunction.index + conjunction[0].length);
     const preceding = before.trim().split(/\s+/).slice(-7).join(" ");
+    const after = text
+      .slice(m.index + m[0].length, c.end)
+      .split(/\b(?:och|samt|utan)\b/iu)[0];
+    const additive = /\binte (?:bara|enbart|endast)\b/iu.test(before);
+    const negative =
+      !additive &&
+      (/\b(?:inte|ej|ingen|inget|inga|utan|varken)\b/iu.test(preceding) ||
+        /^(?:\s+(?:ska|skall|vill|har|kommer|vi|jag|man|de|den|det|tänker|behöver)){0,5}\s+(?:inte|ej)\b/iu.test(
+          after,
+        ));
     evidence.push(
-      candidate(
-        text,
-        !/\b(?:inte|ej|ingen|inget|inga|utan|varken)\b/i.test(preceding),
-        c.start,
-        c.end,
-        {
-          uncertain:
-            isUncertain(text.slice(c.start, c.end)) ||
-            /inte bara/i.test(before),
-        },
-      ),
+      candidate(text, !negative, c.start, c.end, {
+        uncertain:
+          isUncertain(text.slice(c.start, c.end)) || /inte bara/i.test(before),
+      }),
     );
   }
   if (!evidence.length) return null;

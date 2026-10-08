@@ -8,7 +8,7 @@ En framtida lokal modell kan implementeras bakom parsergränsen, men får bara f
 
 ## Beständigt tillstånd
 
-Varje kommando har `commandId` och `expectedRevision`. D1-batchen skriver tillstånd, händelser, aktörernas projektioner och outbox atomiskt. Samtidiga skrivningar får versionskonflikt; en idempotent omkörning får inte skapa dubbla händelser. UI visar konflikten och låter användaren läsa in senaste versionen innan nytt försök.
+Varje kommando har `commandId` och `expectedRevision`. D1-batchen skriver tillstånd, händelser, aktörernas projektioner och outbox atomiskt. Samtidiga skrivningar får versionskonflikt; en idempotent omkörning får inte skapa dubbla händelser. UI visar konflikten och erbjuder att spara den lokala inmatningen som ett separat utkast. Den andra vyns version skrivs inte över. Nätfel återförsöks med samma kommandonyckel; osparad fritext och bekräftade svar kan återupptas uttryckligen inom samma webbläsarflik. Från 0.5.1 börjar både sidöppning och omladdning tomt; senaste ärendet väljs aldrig automatiskt. Nya ärenden skapas först vid inmatning. Fulltexten skickas inte som API-fält, men fakta och källutdrag skickas.
 
 Händelserna har en SHA-256-kedja som verifieras vid läsning. Detta upptäcker ändrade poster men är **inte** extern tidsstämpling, digital signatur eller skydd mot en administratör som skriver om hela kedjan. Nuvarande pilot verifierar hela kedjan; paginering och extern förankring krävs inför hög volym.
 
@@ -44,6 +44,6 @@ Negation hanteras per satsdel; motstridiga besked förblir uncertain. Datum vali
 
 ## Nationella mallar och produktionsgrind
 
-Nya ärenden använder 100 nationella avtal på 1.0.0. SCB:s 290 kommunnamn/koder finns offline. Postort och kommun är separata; osäkert kommunval skapar inga uppgifter. Aktörsroller binds till kommunkod och ändrat kommunval återkallar gamla underlag och bedömningar. Alla äldre Trelleborgavtal finns kvar oförändrade. Ingen lokal rättslig profil påstås vara verifierad.
+Nya ärenden använder 102 nationella avtal på 1.0.0. SCB:s 290 kommunnamn/koder finns offline. Postort och kommun är separata; osäkert kommunval skapar inga uppgifter. Aktörsroller binds till kommunkod och ändrat kommunval återkallar gamla underlag och bedömningar. Alla äldre Trelleborgavtal finns kvar oförändrade. Ingen lokal rättslig profil påstås vara verifierad.
 
 OIDC med PKCE, signerad tokenvalidering, browserbundet engångsstate och administrerad handläggarroll är implementerat. Anonyma sessioner och pilotnycklar nekas i produktionsläge. Verklig IdP, lokala processprofiler och mottagaradaptrar behöver konfigureras och granskas före skarpt intag. Se [produktionskontrakt](production.md) för konfiguration, återkallad behörighet, export och begränsad städning av utgångna sessionsuppgifter.

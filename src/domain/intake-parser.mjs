@@ -1,116 +1,22 @@
-import { SCENARIOS, NATIONAL_SCENARIOS, registry } from "./catalog.mjs";
+import { SCENARIOS, NATIONAL_SCENARIOS } from "./catalog.mjs";
 import { extractMunicipality } from "./municipalities.mjs";
+import { educationFacts } from "./education-extractors.mjs";
+import { extractQuantity } from "./swedish-numbers.mjs";
 import { parseRestaurant } from "./parser.mjs";
 import {
   candidate,
   context,
-  normalize,
-  editDistance,
   extractAddress,
   extractBoolean,
   extractDate,
-  extractNumber,
   isUncertain,
 } from "./extractors.mjs";
 import { diagnose, validateValue } from "./core.mjs";
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const action =
-  /(?:öppna|starta|arrangera|anordna|bygga|ändra|byta|installera|riva|beställa|placera|ordna|spela|förvara|anlägga|avsluta|stänga|anmäla|fråga|förbereda|ansluta|rapportera|gräva|felanmäl\w*|planera|boka|registrera)(?![\p{L}])/iu;
+import { detectSwedishIntent } from "./intent-detection.mjs";
+export const detectIntent = (text, scenarios = SCENARIOS) =>
+  detectSwedishIntent(text, scenarios);
 const dangerous =
   /(?<![\p{L}])(?:kärnkraft|vapen|fyrverkeri\w*|sprängämne\w*|explosiv\w*|asyl|akutmottagning|vårdcentral)(?![\p{L}])/iu;
-export function detectIntent(input, scenarios = SCENARIOS) {
-  const text = String(input).slice(0, 3000),
-    hits = [];
-  // Details of a chosen action are not a second goal. Never inspect private annotations for intent.
-  const goalText = text.split(
-    /(?:detaljer|åtgärd|beskrivning|egen anteckning)\s*:/iu,
-  )[0];
-  for (const s of scenarios) {
-    for (const alias of s.aliases) {
-      const pattern = escapeRe(alias).replace(/ /g, "\\s+(?:(?:en|ett)\\s+)?");
-      const re = new RegExp("(?<![\\p{L}])" + pattern + "(?![\\p{L}])", "giu");
-      for (const m of goalText.matchAll(re)) {
-        const c = context(goalText, m.index),
-          before = goalText.slice(c.start, m.index);
-        if (
-          /(?:lokalen (?:är|används som)|nuvarande användning|tidigare var|blir|ska bli)\s+(?:en |ett )?$/iu.test(
-            before,
-          )
-        )
-          continue;
-        hits.push({
-          id: s.id,
-          start: m.index,
-          end: m.index + m[0].length,
-          source: m[0],
-          fuzzy: false,
-          uncertain:
-            !action.test(before + " " + m[0]) ||
-            isUncertain(goalText.slice(c.start, c.end)) ||
-            /(?<![\p{L}])(?:inte|ej)(?![\p{L}])/iu.test(before),
-        });
-      }
-    }
-  }
-  // Prefer a more specific phrase over an overlapping general intent.
-  const unique = hits.filter(
-    (h) =>
-      !hits.some(
-        (x) =>
-          x.id !== h.id &&
-          x.start <= h.start &&
-          x.end >= h.end &&
-          x.end - x.start > h.end - h.start,
-      ),
-  );
-  const hasFood = unique.some((h) =>
-    /^(?:restaurant|food\.(?:cafe|foodtruck))\./.test(h.id),
-  );
-  const goals = [
-    ...new Map(
-      unique
-        .filter(
-          (h) =>
-            !hasFood ||
-            !/^(?:publicspace\.outdoorseating|building\.(?:ventilation|structure))\./.test(
-              h.id,
-            ),
-        )
-        .map((h) => [h.id, h]),
-    ).values(),
-  ];
-  if (!goals.length) {
-    for (const word of goalText.matchAll(/[\p{L}]+/gu)) {
-      if (word[0].length < 6) continue;
-      const alternatives = scenarios.filter((s) =>
-        s.aliases.some(
-          (a) =>
-            !a.includes(" ") &&
-            Math.abs(a.length - word[0].length) <= 1 &&
-            editDistance(normalize(a), normalize(word[0])) === 1,
-        ),
-      );
-      if (alternatives.length === 1) {
-        goals.push({
-          id: alternatives[0].id,
-          source: word[0],
-          start: word.index,
-          end: word.index + word[0].length,
-          fuzzy: true,
-          uncertain: true,
-        });
-        break;
-      }
-    }
-  }
-  return {
-    goals,
-    goal: goals.length === 1 ? goals[0].id : null,
-    corrections: goals
-      .filter((x) => x.fuzzy || normalize(x.source) === "resturang")
-      .map((x) => ({ from: x.source, to: registry[x.id].title })),
-  };
-}
 function genericFacts(text, s) {
   const facts = {},
     invalid = [];
@@ -152,16 +58,6 @@ function genericFacts(text, s) {
     }
     if (d.type === "boolean" && d.parse?.words) {
       const f = extractBoolean(text, d.parse.words);
-      if (f) facts[key] = f;
-    }
-    if (d.type === "number") {
-      const re =
-        key === "capacity"
-          ? /(\d[\d ]*)\s*(?:gäster|personer|deltagare|besökare|sittplatser)/giu
-          : key === "portions"
-            ? /(\d+)\s*portioner\s*(?:per|om|\/)\s*dag/giu
-            : /(\d+)\s*(?:m²|kvm|kvadratmeter)/giu;
-      const f = extractNumber(text, re, d);
       if (f) facts[key] = f;
     }
   }
@@ -239,7 +135,18 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
           maxCapacity: scenario.fields.capacity.max,
         })
       : genericFacts(text, scenario);
-  const facts = result.facts;
+  const facts = { ...result.facts, ...educationFacts(text, scenario) };
+  for (const [key, units] of Object.entries({
+    capacity: "gäster|personer|deltagare|besökare|sittplatser",
+    portions: "portioner\\s*(?:per|om|/)\\s*dag",
+    area: "m²|kvm|kvadratmeter",
+    outdoor_area: "m²|kvm|kvadratmeter",
+  })) {
+    if (scenario.fields[key]) {
+      const f = extractQuantity(text, units, scenario.fields[key]);
+      if (f) facts[key] = f;
+    }
+  }
   if (scenario.jurisdiction === "SE") {
     delete facts.municipality;
     const m = extractMunicipality(text);
@@ -262,11 +169,12 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
     );
   const suggestedScenario =
     intent.goal && intent.goal !== scenario.id ? intent.goal : null;
-  let goal = suggestedScenario
+  const goal = suggestedScenario
     ? null
     : intent.goal || (goalSelected ? scenario.id : null);
   if (
     !intent.goal &&
+    !intent.goals.length &&
     !goalSelected &&
     text.trim().length > 25 &&
     !extractAddress(text) &&
@@ -318,7 +226,14 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
         message: "Bekräfta vilket datum som är slutdatum.",
       });
   }
+  // A multi-goal input has no shared fact bag: numbers, addresses and dates
+  // must not silently cross from one intended service into another.
+  if (intent.goals.length > 1)
+    for (const key of Object.keys(facts)) delete facts[key];
   return {
+    goals: intent.goals,
+    mentions: intent.mentions,
+    goalRelation: intent.relation,
     goal,
     facts,
     missing: diagnose(scenario, facts).missing,
@@ -326,9 +241,6 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
     unsupported: [...new Set(unsupported)],
     corrections: intent.corrections,
     suggestedScenario,
-    method:
-      scenario.jurisdiction === "SE"
-        ? "local.deterministic.sv.v4"
-        : "local.deterministic.sv.v3",
+    method: "local.deterministic.sv.v5",
   };
 }
