@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ÖPPNA · 100 vägar genom offentlig service</title>
+    <meta
+      name="description"
+      content="En sammanhängande väg från idé till avgränsade handläggarfrågor. ÖPPNA:s pilot med 100 ärendetyper."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/app.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ÖPPNA startsida"
+        ><span class="brand-icon">ö</span> ÖPPNA</a
+      ><span class="tagline">Offentlig service. Enklare.</span>
+      <div class="header-right">
+        <span class="pilot-tag" id="mode-label">ANSLUTER</span
+        ><a class="staff-link" href="/handlaggning">Handläggarvy</a
+        ><button id="logout" class="text-button" hidden>Logga ut</button>
+      </div>
+    </header>
+    <div class="servicebar">
+      <div>
+        <span class="municipality" id="municipality-label">HELA SVERIGE</span
+        ><strong id="scenario-title">Öppna restaurang</strong
+        ><span class="scenario-version" id="scenario-version"
+          >Detaljerad pilot · v1.0</span
+        >
+      </div>
+      <div class="case-controls">
+        <label class="sr-only" for="case-select">Välj ditt ärende</label
+        ><select id="case-select" aria-label="Välj ditt ärende"></select
+        ><button id="new-case" class="text-button">Nytt ärende</button
+        ><span id="save-status" role="status">Ansluter…</span>
+      </div>
+    </div>
+    <div id="error-banner" role="alert" hidden></div>
+    <section
+      id="identity-panel"
+      class="panel staff-shell"
+      hidden
+      aria-live="polite"
+    ></section>
+    <main class="workspace" id="citizen-workspace">
+      <div class="citizen-column">
+        <section class="panel intent-panel">
+          <div class="eyebrow">
+            <span>01 / DITT PERSPEKTIV</span
+            ><span class="local">Parsning i din webbläsare</span>
+          </div>
+          <h1>Vad vill du göra?</h1>
+          <p class="intro">
+            Börja med din idé. Vi hjälper dig reda ut nästa steg.
+          </p>
+          <label class="sr-only" for="intent">Beskriv ditt mål</label>
+          <div class="input-wrap">
+            <textarea
+              id="intent"
+              maxlength="3000"
+              placeholder="Jag vill öppna en italiensk restaurang för 40 gäster och servera vin…"
+              spellcheck="false"
+            ></textarea>
+            <div class="input-meta">
+              <span>Hela fritexten skickas aldrig till servern.</span
+              ><span id="count">0 / 3 000</span>
+            </div>
+          </div>
+          <div class="example-row">
+            <button class="secondary" id="open-catalog">
+              Välj ärendetyp · 100
+            </button>
+            <button class="text-button" id="example">
+              Prova restaurangexemplet</button
+            ><button class="text-button" id="complete-example">
+              Fyll med testuppgifter
+            </button>
+          </div>
+          <div id="question"></div>
+          <div id="facts"></div>
+        </section>
+        <section class="panel tracking-panel">
+          <div id="tracking"></div>
+        </section>
+      </div>
+      <div class="system-column">
+        <section class="terminal">
+          <div class="eyebrow">
+            <span>02 / SYSTEMETS PERSPEKTIV</span
+            ><span class="live"><i></i> Live</span>
+          </div>
+          <h2>Samma ärende, under ytan.</h2>
+          <p>Fakta, regelgrenar och spårbara bedömningar.</p>
+          <div class="terminal-bar">
+            <span id="case-ref">case / …</span>
+            <div role="tablist" aria-label="Systemets vy">
+              <button
+                id="json-tab"
+                role="tab"
+                aria-selected="true"
+                aria-controls="system-content"
+                data-system-tab="json"
+              >
+                Ärendegraf</button
+              ><button
+                id="events-tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="system-content"
+                data-system-tab="events"
+              >
+                Händelser
+              </button>
+            </div>
+          </div>
+          <div
+            id="system-content"
+            role="tabpanel"
+            aria-labelledby="json-tab"
+          ></div>
+          <div class="terminal-footer">
+            <span>Beständigt tillstånd · lokal parser</span
+            ><span id="system-revision"></span>
+          </div>
+        </section>
+        <section class="panel authority-panel">
+          <div class="eyebrow">
+            <span>03 / MYNDIGHETERNAS PERSPEKTIV</span
+            ><span id="staff-scope">Avgränsat underlag</span>
+          </div>
+          <h2>Rätt fråga till rätt handläggare.</h2>
+          <p class="intro">
+            Aktören får bara de uppgifter som behövs för just frågan.
+          </p>
+          <div id="authority"></div>
+        </section>
+      </div>
+    </main>
+    <main id="staff-workspace" hidden>
+      <section class="panel staff-shell">
+        <div class="eyebrow">ÖPPNA / HANDLÄGGNING</div>
+        <h1>Din arbetsyta</h1>
+        <div id="staff-standalone"></div>
+      </section>
+    </main>
+    <footer>
+      <strong>ÖPPNA <span>· Pilot för offentlig service</span></strong>
+      <p>
+        Inga externa myndighetssystem är anslutna. Använd testuppgifter.
+        Granskningar i piloten är inte myndighetsbeslut.
+      </p>
+      <button class="text-button" id="about">Om pilot och källor</button>
+    </footer>
+    <dialog id="about-dialog">
+      <button class="close-dialog" aria-label="Stäng" id="close-about">
+        ×
+      </button>
+      <div class="eyebrow">EN VÄG GENOM FLERA PROCESSER</div>
+      <h2>En ärendegraf, flera perspektiv.</h2>
+      <p>
+        Fakta, bedömningar och händelser sparas i en databas. Fritexten parsas
+        lokalt; endast strukturerade uppgifter och korta källutdrag sparas.
+        Procenttal är regelvärden, inte uppmätta sannolikheter.
+      </p>
+      <p id="scenario-scope"></p>
+      <p>
+        100 kommunoberoende ärendetyper delar samma ärendegraf och förbereder
+        specifika sakfrågor för mänsklig bedömning. Underlagen är inte
+        fullständiga myndighetsansökningar. Kommunval avgör vilka lokala aktörer
+        som får tillgång; lokala regler behöver verifieras separat.
+      </p>
+      <p>
+        Pilotläget låter dig prova handläggning av ditt eget testärende. Servern
+        avgränsar behörigheten till just det ärendet och den valda aktören.
+        Inget lämnas till en myndighet. Dina testärenden kan återöppnas i samma
+        webbläsare under sessionens sju dagar.
+      </p>
+      <h3>Processens källor</h3>
+      <div id="source-links"></div>
+      <p class="muted" id="source-version">
+        Scenarioversion 1.0.0 · källkontrollerat 8 oktober 2026. Automatiken
+        föreslår frågor; rättsliga bedömningar kräver ansvarig handläggare.
+      </p>
+    </dialog>
+    <dialog id="catalog-dialog" aria-labelledby="catalog-title">
+      <button
+        class="close-dialog"
+        aria-label="Stäng ärendekatalog"
+        id="close-catalog"
+      >
+        ×
+      </button>
+      <div class="eyebrow">ÖPPNA / ÄRENDEKATALOG</div>
+      <h2 id="catalog-title">Vad vill du få gjort?</h2>
+      <p>
+        100 kommunoberoende flöden. Egna följdfrågor, avgränsade underlag och
+        spårbara bedömningar. Inga externa myndighetsanslutningar.
+      </p>
+      <div class="catalog-filters">
+        <label
+          >Sök ärendetyp<input
+            id="scenario-search"
+            class="field"
+            type="search"
+            placeholder="Butik, garage, evenemang, adress…"
+            autocomplete="off" /></label
+        ><label
+          >Område<select id="scenario-family" class="field"></select
+        ></label>
+      </div>
+      <p id="catalog-count" role="status"></p>
+      <div id="scenario-results"></div>
+    </dialog>
+    <div id="toast" role="status" hidden></div>
+    <noscript>JavaScript behövs för att tolka texten lokalt.</noscript>
+  </body>
+</html>

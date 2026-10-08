@@ -1,0 +1,1 @@
+CREATE INDEX `tasks_authority_updated_id` ON `tasks` (`authority`,`updated_at`,`id`);

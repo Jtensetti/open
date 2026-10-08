@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "oppna-restaurant-pilot",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-10-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": { "DEPLOYMENT_MODE": "pilot" },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 },
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "oppna-pilot",
+      "migrations_dir": "drizzle",
+    },
+  ],
+}
