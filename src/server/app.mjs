@@ -5,7 +5,25 @@ import {
   packetFor,
   scenarioFor,
 } from "../domain/core.mjs";
-import { AUTHORITIES, catalogSummary } from "../domain/catalog.mjs";
+import {
+  AUTHORITIES,
+  catalogSummary,
+  DEFAULT_SCENARIO_ID,
+  registry,
+} from "../domain/catalog.mjs";
+import {
+  authoritiesFor,
+  knownAuthority,
+} from "../domain/authority-routing.mjs";
+import {
+  startIdentity,
+  completeIdentity,
+  endSessions,
+  identityProviders,
+  requireStaffGrant,
+} from "./identity.mjs";
+import { readiness, maintenance } from "./operations.mjs";
+import { pageRequest, nextCursor } from "./pagination.mjs";
 import {
   readCase,
   createCase,
@@ -25,21 +43,27 @@ import {
 const uuid = (s) =>
   typeof s === "string" &&
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
-const json = (body, status = 200, headers = {}) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      ...headers,
-    },
-  });
+const json = (body, status = 200, extraHeaders = {}) => {
+  const headers = new Headers(extraHeaders);
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  return new Response(JSON.stringify(body), { status, headers });
+};
 async function citizen(request, env) {
   const a = await sessionFor(request, env);
   if (!a)
     throw new DomainError(
       "UNAUTHENTICATED",
       "Öppna en ny session för att fortsätta.",
+      401,
+    );
+  if (
+    env.DEPLOYMENT_MODE !== "pilot" &&
+    (env.DEPLOYMENT_MODE !== "production" || a.authKind !== "oidc")
+  )
+    throw new DomainError(
+      "AUTH_REQUIRED",
+      "Logga in med verifierad identitet.",
       401,
     );
   return a;
@@ -54,6 +78,16 @@ async function staff(request, env) {
       "Pilotbehörighet är avstängd.",
       403,
     );
+  if (
+    env.DEPLOYMENT_MODE !== "pilot" &&
+    (env.DEPLOYMENT_MODE !== "production" || a.authKind !== "oidc")
+  )
+    throw new DomainError(
+      "AUTH_REQUIRED",
+      "Logga in med organisationens identitetsleverantör.",
+      401,
+    );
+  await requireStaffGrant(env, a);
   return a;
 }
 async function owned(request, env, id) {
@@ -67,6 +101,7 @@ export function createApp(assets = {}) {
   return {
     async fetch(request, env, ctx) {
       const requestId = crypto.randomUUID();
+      const started = Date.now();
       let response;
       try {
         response = await handle(request, env, ctx, assets);
@@ -97,6 +132,17 @@ export function createApp(assets = {}) {
       const headers = new Headers(response.headers);
       for (const [k, v] of Object.entries(securityHeaders)) headers.set(k, v);
       headers.set("X-Request-Id", requestId);
+      if (response.status === 429) headers.set("Retry-After", "3600");
+      if (env.LOG_REQUESTS === "true")
+        console.log(
+          JSON.stringify({
+            event: "request_completed",
+            requestId,
+            method: request.method,
+            status: response.status,
+            durationMs: Date.now() - started,
+          }),
+        );
       return new Response(response.body, { status: response.status, headers });
     },
   };
@@ -128,21 +174,84 @@ async function handle(request, env, ctx, assets) {
   if (!["GET", "HEAD"].includes(request.method)) requireOrigin(request);
   if (path === "/api/config" && request.method === "GET")
     return json({
-      version: "0.3.0",
+      version: "0.4.0",
       mode: env.DEPLOYMENT_MODE || "closed",
-      scenario: RESTAURANT,
+      scenario: registry[DEFAULT_SCENARIO_ID],
       scenarios: catalogSummary(),
       integrations: "not_connected",
-      staffConfigured: !!env.STAFF_KEY_HASHES,
+      staffConfigured:
+        env.DEPLOYMENT_MODE === "pilot"
+          ? !!env.STAFF_KEY_HASHES
+          : identityProviders(env).staff,
       pilotEnabled: env.DEPLOYMENT_MODE === "pilot",
+      identityProviders: identityProviders(env),
+      readiness: readiness(env),
     });
   if (path === "/api/health" && request.method === "GET") {
-    await env.DB.prepare("SELECT 1 AS ok").first();
-    return json({ status: "ok", version: "0.3.0" });
+    await env.DB.prepare(
+      "SELECT token_hash,auth_kind FROM sessions LIMIT 1",
+    ).first();
+    await env.DB.prepare(
+      "SELECT state_hash FROM auth_transactions LIMIT 1",
+    ).first();
+    return json({ status: "ok", version: "0.4.0" });
+  }
+  if (path === "/api/readiness" && request.method === "GET")
+    return json(readiness(env), env.DEPLOYMENT_MODE === "pilot" ? 200 : 503);
+  if (path === "/api/maintenance" && request.method === "POST")
+    return json(await maintenance(request, env));
+  if (path === "/api/auth/start" && request.method === "POST") {
+    await rateLimit(env, request, "identity", 30);
+    const body = await jsonBody(request),
+      result = await startIdentity(env, body.provider);
+    return json({ authorizationUrl: result.url }, 200, {
+      "set-cookie": result.cookie,
+    });
+  }
+  if (path === "/api/auth/callback" && request.method === "GET") {
+    const result = await completeIdentity(request, env),
+      headers = new Headers({
+        location: result.location,
+        "cache-control": "no-store",
+      });
+    headers.append("set-cookie", result.cookie);
+    headers.append("set-cookie", result.clearCookie);
+    return new Response(null, { status: 303, headers });
+  }
+  if (path === "/api/logout" && request.method === "POST") {
+    const headers = new Headers();
+    for (const cookie of await endSessions(request, env))
+      headers.append("set-cookie", cookie);
+    return json({ authenticated: false }, 200, headers);
+  }
+  if (path === "/api/session" && request.method === "GET") {
+    const a = await sessionFor(
+      request,
+      env,
+      url.searchParams.get("provider") === "staff" ? "staff" : "citizen",
+    );
+    return json({
+      authenticated:
+        !!a &&
+        (env.DEPLOYMENT_MODE === "pilot" ||
+          (env.DEPLOYMENT_MODE === "production" && a.authKind === "oidc")),
+      authKind: a?.authKind || null,
+    });
   }
   if (path === "/api/session" && request.method === "POST") {
     const existing = await sessionFor(request, env);
-    if (existing) return json({ authenticated: true });
+    if (
+      existing &&
+      (env.DEPLOYMENT_MODE === "pilot" ||
+        (env.DEPLOYMENT_MODE === "production" && existing.authKind === "oidc"))
+    )
+      return json({ authenticated: true });
+    if (env.DEPLOYMENT_MODE !== "pilot")
+      throw new DomainError(
+        "AUTH_REQUIRED",
+        "Logga in med verifierad identitet.",
+        401,
+      );
     await rateLimit(env, request, "session", 60);
     const actor = { id: crypto.randomUUID(), role: "citizen" };
     return json({ authenticated: true }, 201, {
@@ -184,14 +293,19 @@ async function handle(request, env, ctx, assets) {
     return json(
       {
         case: citizenView(
-          await createCase(env.DB, a.id, "pilot", body.scenarioId),
+          await createCase(
+            env.DB,
+            a.id,
+            "pilot",
+            body.scenarioId || DEFAULT_SCENARIO_ID,
+          ),
         ),
       },
       201,
     );
   }
   const caseMatch = path.match(
-    /^\/api\/cases\/([a-f0-9-]+)(?:\/(commands|events|pilot-session|integration))?$/i,
+    /^\/api\/cases\/([a-f0-9-]+)(?:\/(commands|events|pilot-session|integration|export))?$/i,
   );
   if (caseMatch) {
     const [, id, action] = caseMatch;
@@ -202,6 +316,14 @@ async function handle(request, env, ctx, assets) {
       return json({ case: citizenView(state) });
     if (action === "events" && request.method === "GET")
       return json(await auditTrail(env.DB, id));
+    if (action === "export" && request.method === "GET") {
+      const trail = await auditTrail(env.DB, id);
+      return json(
+        { schemaVersion: "1.0.0", case: citizenView(state), audit: trail },
+        200,
+        { "content-disposition": `attachment; filename="oppna-${id}.json"` },
+      );
+    }
     if (action === "integration" && request.method === "GET") {
       const { results } = await env.DB.prepare(
         "SELECT authority,status,created_at FROM outbox WHERE case_id=? AND status=? ORDER BY created_at DESC",
@@ -213,7 +335,11 @@ async function handle(request, env, ctx, assets) {
     if (action === "commands" && request.method === "POST") {
       await rateLimit(env, request, "command", 1000);
       const body = await jsonBody(request);
-      if (!uuid(body.commandId) || !Number.isInteger(body.expectedRevision))
+      if (
+        !uuid(body.commandId) ||
+        !Number.isSafeInteger(body.expectedRevision) ||
+        body.expectedRevision < 0
+      )
         throw new DomainError(
           "COMMAND_VERSION_REQUIRED",
           "Åtgärden måste ha ett unikt id och aktuell version.",
@@ -252,7 +378,10 @@ async function handle(request, env, ctx, assets) {
       const body = await jsonBody(request);
       if (
         !Object.hasOwn(
-          scenarioFor(state.scenarioId, state.scenarioVersion).authorities,
+          authoritiesFor(
+            scenarioFor(state.scenarioId, state.scenarioVersion),
+            state.facts,
+          ),
           body.authority,
         ) ||
         !state.tasks.some((t) => t.authority === body.authority)
@@ -282,6 +411,12 @@ async function handle(request, env, ctx, assets) {
     }
   }
   if (path === "/api/staff/login" && request.method === "POST") {
+    if (env.DEPLOYMENT_MODE !== "pilot")
+      throw new DomainError(
+        "AUTH_REQUIRED",
+        "Använd organisationens identitetsleverantör.",
+        401,
+      );
     await rateLimit(env, request, "staff_login", 15);
     const body = await jsonBody(request);
     if (
@@ -303,7 +438,7 @@ async function handle(request, env, ctx, assets) {
     if (
       !entry ||
       !entry.subject ||
-      !Object.hasOwn(AUTHORITIES, entry.authority)
+      !knownAuthority(entry.authority, AUTHORITIES)
     )
       throw new DomainError("LOGIN_FAILED", "Inloggningen misslyckades.", 401);
     return json({ authority: entry.authority }, 200, {
@@ -316,20 +451,28 @@ async function handle(request, env, ctx, assets) {
   }
   if (path === "/api/staff/tasks" && request.method === "GET") {
     const a = await staff(request, env);
-    const sql =
-      a.role === "pilot_staff"
-        ? "SELECT packet_json FROM tasks WHERE authority=? AND case_id=? ORDER BY updated_at DESC LIMIT 100"
-        : "SELECT packet_json FROM tasks WHERE authority=? AND status != 'prepared' ORDER BY updated_at DESC LIMIT 100";
-    const p = env.DB.prepare(sql);
-    const { results } = await (
-      a.role === "pilot_staff"
-        ? p.bind(a.authority, a.caseId)
-        : p.bind(a.authority)
-    ).all();
+    const { limit, after } = pageRequest(url),
+      values = [a.authority];
+    let scope =
+      a.role === "pilot_staff" ? " AND case_id=?" : " AND status != 'prepared'";
+    if (a.role === "pilot_staff") values.push(a.caseId);
+    if (after) {
+      scope += " AND (updated_at,id)<(?,?)";
+      values.push(...after);
+    }
+    const { results } = await env.DB.prepare(
+      "SELECT id,updated_at,packet_json FROM tasks WHERE authority=?" +
+        scope +
+        " ORDER BY updated_at DESC,id DESC LIMIT ?",
+    )
+      .bind(...values, limit + 1)
+      .all();
+    const rows = results.slice(0, limit);
     return json({
       authority: a.authority,
       mode: a.role === "pilot_staff" ? "pilot" : "staff",
-      tasks: results.map((r) => JSON.parse(r.packet_json)),
+      tasks: rows.map((r) => JSON.parse(r.packet_json)),
+      nextCursor: results.length > limit ? nextCursor(rows.at(-1)) : null,
     });
   }
   if (path === "/api/staff/assessment" && request.method === "POST") {
@@ -339,7 +482,8 @@ async function handle(request, env, ctx, assets) {
     if (
       !uuid(body.caseId) ||
       !uuid(body.commandId) ||
-      !Number.isInteger(body.expectedRevision) ||
+      !Number.isSafeInteger(body.expectedRevision) ||
+      body.expectedRevision < 0 ||
       body.command?.type !== "assessment"
     )
       throw new DomainError(

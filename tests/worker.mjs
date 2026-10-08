@@ -2,6 +2,22 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { facts } from "./helpers.mjs";
+import { registry } from "../src/domain/catalog.mjs";
+import { SignJWT, generateKeyPair, exportJWK } from "jose";
+const key = await generateKeyPair("ES256"),
+  publicKey = {
+    ...(await exportJWK(key.publicKey)),
+    kid: "runtime",
+    alg: "ES256",
+  };
+let identityNonce;
+const identity = {
+  issuer: "https://identity.test",
+  clientId: "runtime",
+  authorizationEndpoint: "https://identity.test/authorize",
+  tokenEndpoint: "https://identity.test/token",
+  jwksUri: "https://identity.test/keys",
+};
 const mf = new Miniflare(
   convertV4MiniflareOptions({
     modules: true,
@@ -9,7 +25,29 @@ const mf = new Miniflare(
     compatibilityDate: "2026-10-08",
     compatibilityFlags: ["nodejs_compat"],
     d1Databases: ["DB"],
-    bindings: { DEPLOYMENT_MODE: "pilot", LOCAL_DEV: "true" },
+    bindings: {
+      DEPLOYMENT_MODE: "pilot",
+      LOCAL_DEV: "true",
+      PUBLIC_ORIGIN: "https://oppna.test",
+      OIDC_CITIZEN: JSON.stringify(identity),
+    },
+    serviceBindings: {
+      OIDC_HTTP: async (request) => {
+        const data = request.url.endsWith("/keys")
+          ? { keys: [publicKey] }
+          : {
+              id_token: await new SignJWT({ nonce: identityNonce })
+                .setProtectedHeader({ alg: "ES256", kid: "runtime" })
+                .setIssuer(identity.issuer)
+                .setAudience(identity.clientId)
+                .setSubject("worker-citizen")
+                .setIssuedAt()
+                .setExpirationTime("5m")
+                .sign(key.privateKey),
+            };
+        return Response.json(data);
+      },
+    },
   }),
 );
 try {
@@ -49,7 +87,9 @@ try {
     return data;
   }
   await request("/api/session", "POST", {});
-  let s = (await request("/api/cases", "POST", {})).case;
+  let s = (
+    await request("/api/cases", "POST", { scenarioId: "restaurant.trelleborg" })
+  ).case;
   s = (
     await request(`/api/cases/${s.id}/commands`, "POST", {
       commandId: crypto.randomUUID(),
@@ -93,8 +133,53 @@ try {
     ).status,
     "accepted",
   );
+  const national = registry["restaurant.se"];
+  s = (await request("/api/cases", "POST", { scenarioId: national.id })).case;
+  s = (
+    await request(`/api/cases/${s.id}/commands`, "POST", {
+      commandId: crypto.randomUUID(),
+      expectedRevision: s.revision,
+      command: {
+        type: "replace_facts",
+        facts: facts({ ...national.demo, municipality: "Malmö" }),
+        inputStatus: "supported",
+      },
+    })
+  ).case;
+  assert.ok(s.tasks.some((t) => t.authority === "municipality.1280.food"));
+  assert.equal(
+    (await request(`/api/cases/${s.id}/export`)).audit.verified,
+    true,
+  );
+  const auth = await mf.dispatchFetch("https://oppna.test/api/auth/start", {
+    method: "POST",
+    headers: {
+      Origin: "https://oppna.test",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ provider: "citizen" }),
+  });
+  assert.equal(auth.status, 200);
+  const authURL = new URL((await auth.json()).authorizationUrl);
+  identityNonce = authURL.searchParams.get("nonce");
+  const callback = await mf.dispatchFetch(
+    `https://oppna.test/api/auth/callback?state=${authURL.searchParams.get("state")}&code=worker-code`,
+    {
+      redirect: "manual",
+      headers: { Cookie: auth.headers.get("set-cookie").split(";")[0] },
+    },
+  );
+  assert.equal(
+    callback.status,
+    303,
+    callback.status === 303 ? "" : await callback.text(),
+  );
+  const session = await mf.dispatchFetch("https://oppna.test/api/session", {
+    headers: { Cookie: callback.headers.get("set-cookie").split(";")[0] },
+  });
+  assert.equal((await session.json()).authKind, "oidc");
   console.log(
-    "PASS: built Worker + real workerd/D1: migration, sessions, state, scoped task, assessment, audit.",
+    "PASS: built Worker + real workerd/D1: migrations, legacy/national state, municipal tasks, assessment, audit/export and signed OIDC login.",
   );
 } finally {
   await mf.dispose();

@@ -14,7 +14,7 @@ Händelserna har en SHA-256-kedja som verifieras vid läsning. Detta upptäcker 
 
 ## Behörighet och minimering
 
-Slumpmässiga sessioner ligger i HttpOnly/Secure/SameSite-cookies; servern lagrar endast tokenhashar. Medborgaren får sina egna ärenden. Anonyma pilotsessioner varar sju dagar och kan inte återställas efter cookie-förlust. Riktig återkommande användning behöver verifierad identitet och företrädarskap.
+Slumpmässiga sessioner ligger i HttpOnly/Secure/SameSite-cookies; servern lagrar endast tokenhashar. Medborgaren får sina egna ärenden. Anonyma pilotsessioner varar sju dagar och kan inte återställas efter cookie-förlust. OIDC-stödet ger stabil verifierad identitet när leverantören konfigureras; företrädarskap måste godkännas separat.
 
 Pilotrollbytet skapar serverkontrollerad behörighet för **ett eget ärende och en vald aktör**. Vanlig handläggaråtkomst kräver en individuellt provisionerad högentropinyckel och avgränsas till en aktör. Nycklar ersätter inte myndighets-SSO och används bara i kontrollerad pilot. Gemensamma organisationsnycklar ska inte användas. Avregistrering kräver att både nyckelhash och befintliga sessioner för subjektet tas bort.
 
@@ -30,7 +30,7 @@ En riktig adapter behöver en avtalad mottagare, autentisering, schema, idempote
 
 Fastställ ansvarig tjänsteoperatör och informationsägare; godkänn identitets-/företrädarskapsflöde, myndighetsbehörighet, personuppgiftsbehandling och gallring. Verifiera scenariot med verksamhetsansvariga och anslut minst en verklig mottagare med kvittens. Genomför säkerhets- och tillgänglighetsgranskning, återläsningsprov och driftsättning med övervakning. `DEPLOYMENT_MODE=production` öppnar inte intaget: det är medvetet stängt tills detta är implementerat.
 
-## Katalog och lokal tolkning, version 0.3.0
+## Katalog och lokal tolkning, version 0.4.0
 
 100 scenarier återanvänder samma motor, API och databas. `scenarioVersions[id][version]` laddar det kontrakt som varje ärende är låst till. Restaurang 1.0.0 finns kvar. En ny version ska läggas till i versionsregistret utan att den gamla tas bort. Ingen automatisk migrering görs.
 
@@ -41,3 +41,9 @@ Lokal intentdetektion föreslår katalogval. Nya flöden har egna följdfrågor,
 Adressutdrag hittar fristående svenska gatuadresser, flerledade gatunamn, portbokstäver och postnummer. Källspann följer originaltexten. Två adresser, nummerintervall eller osäkra uttryck kräver bekräftelse. Ingen registervalidering eller geokodning görs. Bekräftad kommun och tolkad adress är separata fakta.
 
 Negation hanteras per satsdel; motstridiga besked förblir uncertain. Datum valideras mot kalendern. Fuzzy-matchning föreslår bara ett unikt mål och behöver bekräftas. För många mål eller ett ej stött riskområde blir unsupported. En egen planeringsanteckning ingår aldrig i aktörspaket.
+
+## Nationella mallar och produktionsgrind
+
+Nya ärenden använder 100 nationella avtal på 1.0.0. SCB:s 290 kommunnamn/koder finns offline. Postort och kommun är separata; osäkert kommunval skapar inga uppgifter. Aktörsroller binds till kommunkod och ändrat kommunval återkallar gamla underlag och bedömningar. Alla äldre Trelleborgavtal finns kvar oförändrade. Ingen lokal rättslig profil påstås vara verifierad.
+
+OIDC med PKCE, signerad tokenvalidering, browserbundet engångsstate och administrerad handläggarroll är implementerat. Anonyma sessioner och pilotnycklar nekas i produktionsläge. Verklig IdP, lokala processprofiler och mottagaradaptrar behöver konfigureras och granskas före skarpt intag. Se [produktionskontrakt](production.md) för konfiguration, återkallad behörighet, export och begränsad städning av utgångna sessionsuppgifter.

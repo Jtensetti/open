@@ -11,6 +11,7 @@ export const sessions = sqliteTable(
     tokenHash: text("token_hash").primaryKey(),
     principalId: text("principal_id").notNull(),
     role: text("role").notNull(),
+    authKind: text("auth_kind").notNull().default("anonymous"),
     authority: text("authority"),
     caseScope: text("case_scope"),
     expiresAt: integer("expires_at").notNull(),
@@ -74,6 +75,7 @@ export const tasks = sqliteTable(
   (t) => [
     index("tasks_authority_status").on(t.authority, t.status),
     index("tasks_case").on(t.caseId),
+    index("tasks_authority_updated_id").on(t.authority, t.updatedAt, t.id),
   ],
 );
 export const outbox = sqliteTable(
@@ -99,3 +101,15 @@ export const throttle = sqliteTable("throttle", {
   count: integer("count").notNull(),
   expiresAt: integer("expires_at").notNull(),
 });
+export const authTransactions = sqliteTable(
+  "auth_transactions",
+  {
+    stateHash: text("state_hash").primaryKey(),
+    provider: text("provider").notNull(),
+    nonce: text("nonce").notNull(),
+    verifier: text("verifier").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("auth_transactions_expiry").on(t.expiresAt)],
+);

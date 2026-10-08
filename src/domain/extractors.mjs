@@ -49,8 +49,6 @@ export function editDistance(a, b) {
   }
   return p[b.length];
 }
-const places =
-  "Trelleborg|Smygehamn|Beddingestrand|Anderslöv|Klagstorp|Skegrie|Alstad|Gislöv|Höllviken|Malmö|Lund|Ystad|Stockholm|Göteborg|Helsingborg";
 export function extractAddress(text) {
   const found = [];
   // House number belongs to a street token, never a capacity or personal number.
@@ -92,10 +90,14 @@ export function extractAddress(text) {
       /^[, \t]*(\d{3}[ \t]?\d{2})(?:[ \t]+([\p{Lu}][\p{L}\-]*(?:[ \t]+[\p{Lu}][\p{L}\-]*)?))?/u,
     );
     const city = tail.match(
-      new RegExp("^[, \\t]+(" + places + ")(?![\\p{L}])", "iu"),
+      /^[, \t]+([\p{Lu}][\p{L}\-]*(?:[ \t]+[\p{Lu}][\p{L}\-]*){0,2})(?=[,.;\n]|$|\s+(?:i|med|för|och|som|vi|jag)\b)/u,
     );
     if (postal) end += postal[0].length;
-    else if (city) end += city[0].length;
+    else if (
+      city &&
+      !/^(?:Vi|Jag|Kommun|Detaljer|Adressen)(?:\s|$)/u.test(city[1])
+    )
+      end += city[0].length;
     const c = context(text, m.index);
     const raw = text.slice(start, end).trim();
     const value = entrance
@@ -127,6 +129,24 @@ export function extractAddress(text) {
       found.push(
         candidate(text, m[1], start, end, { uncertain: true, confidence: 0.8 }),
       );
+  }
+  // Village addresses have no street suffix. Accept address-shaped standalone
+  // segments or a location cue, but require confirmation of this weaker match.
+  for (const m of text.matchAll(
+    /(?:^|[.;\n]\s*|\b(?:på|vid)\s+)([\p{Lu}][\p{L}.'’\-]*(?:[ \t]+[\p{L}][\p{L}.'’\-]*){0,3}[ \t]+\d{1,4}(?:[ \t]*[A-Z])?(?:,[ \t]*(?:\d{3}[ \t]?\d{2}[ \t]+)?[\p{Lu}][\p{L}\-]*(?:[ \t]+[\p{Lu}][\p{L}\-]*){0,2})?)(?=[.;\n]|$)/gu,
+  )) {
+    const start = m.index + m[0].indexOf(m[1]),
+      end = start + m[1].length;
+    if (
+      /^(?:ÖPPNA|Version|Telefon|Personnummer|Antal|Gäster|Vi|Jag|Adress|Adressen)\b/iu.test(
+        m[1],
+      ) ||
+      found.some((f) => start < f.sourceSpan.end && end > f.sourceSpan.start)
+    )
+      continue;
+    found.push(
+      candidate(text, m[1], start, end, { uncertain: true, confidence: 0.8 }),
+    );
   }
   const unique = [
     ...new Map(found.map((f) => [normalize(f.value), f])).values(),

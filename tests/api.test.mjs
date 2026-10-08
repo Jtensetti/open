@@ -319,7 +319,7 @@ test("pilot credentials cannot access another case; production mode closes pilot
           authority: "trelleborg.food",
         })
       ).status,
-      403,
+      401,
     );
   } finally {
     h.close();

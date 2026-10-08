@@ -19,12 +19,13 @@
       ><span class="tagline">Offentlig service. Enklare.</span>
       <div class="header-right">
         <span class="pilot-tag" id="mode-label">ANSLUTER</span
-        ><a class="staff-link" href="/handlaggning">Handläggarvy</a>
+        ><a class="staff-link" href="/handlaggning">Handläggarvy</a
+        ><button id="logout" class="text-button" hidden>Logga ut</button>
       </div>
     </header>
     <div class="servicebar">
       <div>
-        <span class="municipality">TRELLEBORG</span
+        <span class="municipality" id="municipality-label">HELA SVERIGE</span
         ><strong id="scenario-title">Öppna restaurang</strong
         ><span class="scenario-version" id="scenario-version"
           >Detaljerad pilot · v1.0</span
@@ -38,6 +39,12 @@
       </div>
     </div>
     <div id="error-banner" role="alert" hidden></div>
+    <section
+      id="identity-panel"
+      class="panel staff-shell"
+      hidden
+      aria-live="polite"
+    ></section>
     <main class="workspace" id="citizen-workspace">
       <div class="citizen-column">
         <section class="panel intent-panel">
@@ -160,9 +167,10 @@
       </p>
       <p id="scenario-scope"></p>
       <p>
-        100 ärendetyper delar samma ärendegraf. Restaurang har ett detaljerat
-        pilotflöde; övriga flöden förbereder specifika sakfrågor för mänsklig
-        bedömning. Underlagen är inte fullständiga myndighetsansökningar.
+        100 kommunoberoende ärendetyper delar samma ärendegraf och förbereder
+        specifika sakfrågor för mänsklig bedömning. Underlagen är inte
+        fullständiga myndighetsansökningar. Kommunval avgör vilka lokala aktörer
+        som får tillgång; lokala regler behöver verifieras separat.
       </p>
       <p>
         Pilotläget låter dig prova handläggning av ditt eget testärende. Servern
@@ -188,8 +196,8 @@
       <div class="eyebrow">ÖPPNA / ÄRENDEKATALOG</div>
       <h2 id="catalog-title">Vad vill du få gjort?</h2>
       <p>
-        100 pilotflöden. Egna följdfrågor, avgränsade underlag och spårbara
-        bedömningar. Inga externa myndighetsanslutningar.
+        100 kommunoberoende flöden. Egna följdfrågor, avgränsade underlag och
+        spårbara bedömningar. Inga externa myndighetsanslutningar.
       </p>
       <div class="catalog-filters">
         <label

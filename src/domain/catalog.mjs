@@ -1,5 +1,6 @@
 import { RESTAURANT } from "./restaurant.mjs";
 import { DEFINITIONS } from "./catalog-data.mjs";
+import { nationalScenarios } from "./national-scenarios.mjs";
 export const AUTHORITIES = {
   ...RESTAURANT.authorities,
   "trelleborg.business": {
@@ -749,21 +750,30 @@ export const SCENARIOS = Object.freeze([
     rows.map((row) => createScenario(family, row)),
   ),
 ]);
+export const NATIONAL_SCENARIOS = Object.freeze(nationalScenarios(SCENARIOS));
+export const DEFAULT_SCENARIO_ID = "restaurant.se";
 export const registry = Object.freeze(
-  Object.fromEntries(SCENARIOS.map((s) => [s.id, s])),
+  Object.fromEntries(
+    [...SCENARIOS, ...NATIONAL_SCENARIOS].map((s) => [s.id, s]),
+  ),
 );
 // Versions are explicit even before the first upgrade. Keep old entries when publishing new versions.
 export const scenarioVersions = Object.freeze(
   Object.fromEntries(
-    SCENARIOS.map((s) => [s.id, Object.freeze({ [s.version]: s })]),
+    [...SCENARIOS, ...NATIONAL_SCENARIOS].map((s) => [
+      s.id,
+      Object.freeze({ [s.version]: s }),
+    ]),
   ),
 );
 export const catalogSummary = () =>
-  SCENARIOS.map(({ id, version, title, family, reviewLevel, example }) => ({
-    id,
-    version,
-    title,
-    family,
-    reviewLevel,
-    example,
-  }));
+  NATIONAL_SCENARIOS.map(
+    ({ id, version, title, family, reviewLevel, example }) => ({
+      id,
+      version,
+      title,
+      family,
+      reviewLevel,
+      example,
+    }),
+  );

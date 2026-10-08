@@ -1,4 +1,5 @@
-import { SCENARIOS, registry } from "./catalog.mjs";
+import { SCENARIOS, NATIONAL_SCENARIOS, registry } from "./catalog.mjs";
+import { extractMunicipality } from "./municipalities.mjs";
 import { parseRestaurant } from "./parser.mjs";
 import {
   candidate,
@@ -17,14 +18,14 @@ const action =
   /(?:öppna|starta|arrangera|anordna|bygga|ändra|byta|installera|riva|beställa|placera|ordna|spela|förvara|anlägga|avsluta|stänga|anmäla|fråga|förbereda|ansluta|rapportera|gräva|felanmäl\w*|planera|boka|registrera)(?![\p{L}])/iu;
 const dangerous =
   /(?<![\p{L}])(?:kärnkraft|vapen|fyrverkeri\w*|sprängämne\w*|explosiv\w*|asyl|akutmottagning|vårdcentral)(?![\p{L}])/iu;
-export function detectIntent(input) {
+export function detectIntent(input, scenarios = SCENARIOS) {
   const text = String(input).slice(0, 3000),
     hits = [];
   // Details of a chosen action are not a second goal. Never inspect private annotations for intent.
   const goalText = text.split(
     /(?:detaljer|åtgärd|beskrivning|egen anteckning)\s*:/iu,
   )[0];
-  for (const s of SCENARIOS) {
+  for (const s of scenarios) {
     for (const alias of s.aliases) {
       const pattern = escapeRe(alias).replace(/ /g, "\\s+(?:(?:en|ett)\\s+)?");
       const re = new RegExp("(?<![\\p{L}])" + pattern + "(?![\\p{L}])", "giu");
@@ -62,11 +63,8 @@ export function detectIntent(input) {
           x.end - x.start > h.end - h.start,
       ),
   );
-  const hasFood = unique.some(
-    (h) =>
-      h.id === "restaurant.trelleborg" ||
-      h.id === "food.cafe.trelleborg" ||
-      h.id === "food.foodtruck.trelleborg",
+  const hasFood = unique.some((h) =>
+    /^(?:restaurant|food\.(?:cafe|foodtruck))\./.test(h.id),
   );
   const goals = [
     ...new Map(
@@ -74,11 +72,9 @@ export function detectIntent(input) {
         .filter(
           (h) =>
             !hasFood ||
-            ![
-              "publicspace.outdoorseating.trelleborg",
-              "building.ventilation.trelleborg",
-              "building.structure.trelleborg",
-            ].includes(h.id),
+            !/^(?:publicspace\.outdoorseating|building\.(?:ventilation|structure))\./.test(
+              h.id,
+            ),
         )
         .map((h) => [h.id, h]),
     ).values(),
@@ -86,7 +82,7 @@ export function detectIntent(input) {
   if (!goals.length) {
     for (const word of goalText.matchAll(/[\p{L}]+/gu)) {
       if (word[0].length < 6) continue;
-      const alternatives = SCENARIOS.filter((s) =>
+      const alternatives = scenarios.filter((s) =>
         s.aliases.some(
           (a) =>
             !a.includes(" ") &&
@@ -229,14 +225,26 @@ function genericFacts(text, s) {
 /** Local deterministic parsing. Explicit scenario selection is separate from fact confidence. */
 export function parseIntake(input, scenario, { goalSelected = false } = {}) {
   const text = String(input).slice(0, 3000),
-    intent = detectIntent(text),
+    intent = detectIntent(
+      text,
+      scenario.jurisdiction === "SE" ? NATIONAL_SCENARIOS : SCENARIOS,
+    ),
     unsupported = [],
     uncertain = [];
   const result =
-    scenario.id === "restaurant.trelleborg"
-      ? parseRestaurant(text)
+    scenario.id === "restaurant.trelleborg" ||
+    scenario.templateId === "restaurant.trelleborg"
+      ? parseRestaurant(text, {
+          jurisdictionAgnostic: scenario.jurisdiction === "SE",
+          maxCapacity: scenario.fields.capacity.max,
+        })
       : genericFacts(text, scenario);
   const facts = result.facts;
+  if (scenario.jurisdiction === "SE") {
+    delete facts.municipality;
+    const m = extractMunicipality(text);
+    if (m) facts.municipality = m;
+  }
   if (dangerous.test(text))
     unsupported.push(
       "Målet innehåller en verksamhet som piloten inte stöder. Automatiseringen stoppas; frågan behöver tas om hand av en människa.",
@@ -248,7 +256,7 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
   const outside = text.match(
     /(?<![\p{L}])(?:i |,\s*)(Malmö|Lund|Stockholm|Göteborg|Helsingborg|Ystad)(?![\p{L}])/iu,
   );
-  if (outside)
+  if (outside && scenario.jurisdiction !== "SE")
     unsupported.push(
       "De kommunala pilotflödena gäller Trelleborg. En annan kommun kräver manuell hänvisning.",
     );
@@ -280,7 +288,11 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
         source: f.source,
       });
   // Keep the reviewed restaurant scope, but café/foodtruck/etc now have their own explicit flows.
-  if (scenario.id === "restaurant.trelleborg" && !suggestedScenario) {
+  if (
+    (scenario.id === "restaurant.trelleborg" ||
+      scenario.templateId === "restaurant.trelleborg") &&
+    !suggestedScenario
+  ) {
     unsupported.push(
       ...result.unsupported.filter(
         (x) => !x.startsWith("Första versionen stöder"),
@@ -314,6 +326,9 @@ export function parseIntake(input, scenario, { goalSelected = false } = {}) {
     unsupported: [...new Set(unsupported)],
     corrections: intent.corrections,
     suggestedScenario,
-    method: "local.deterministic.sv.v3",
+    method:
+      scenario.jurisdiction === "SE"
+        ? "local.deterministic.sv.v4"
+        : "local.deterministic.sv.v3",
   };
 }

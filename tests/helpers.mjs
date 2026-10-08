@@ -72,7 +72,9 @@ export function harness() {
     async initialized() {
       const c = client();
       await c.request("/api/session", "POST", {});
-      const r = await c.request("/api/cases", "POST", {});
+      const r = await c.request("/api/cases", "POST", {
+        scenarioId: "restaurant.trelleborg",
+      });
       return { c, state: r.data.case };
     },
     async ready() {

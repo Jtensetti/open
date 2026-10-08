@@ -1,5 +1,14 @@
-import { SCENARIOS, registry, AUTHORITIES } from "../domain/catalog.mjs";
-let scenario = registry["restaurant.trelleborg"];
+import {
+  NATIONAL_SCENARIOS as SCENARIOS,
+  registry,
+  AUTHORITIES,
+  DEFAULT_SCENARIO_ID,
+} from "../domain/catalog.mjs";
+let scenario = registry[DEFAULT_SCENARIO_ID];
+import {
+  authoritiesFor,
+  jurisdictionFor,
+} from "../domain/authority-routing.mjs";
 import { diagnose, matches, validDate, scenarioFor } from "../domain/core.mjs";
 import { parseIntake } from "../domain/intake-parser.mjs";
 const $ = (q) => document.querySelector(q),
@@ -18,6 +27,7 @@ const $ = (q) => document.querySelector(q),
 const standalone = location.pathname === "/handlaggning";
 let config,
   caseState,
+  staffCursor = null,
   localFacts = {},
   parsed = parseIntake("", scenario),
   previousParsed = parsed,
@@ -138,7 +148,7 @@ async function loadCase(id, resetDraft = true) {
   scenario = scenarioFor(caseState.scenarioId, caseState.scenarioVersion);
   scenarioSelected =
     caseState.inputStatus === "supported" ||
-    scenario.id !== "restaurant.trelleborg";
+    scenario.id !== DEFAULT_SCENARIO_ID;
   renderScenarioHeader();
   if (resetDraft) {
     localFacts = structuredClone(caseState.facts);
@@ -339,13 +349,14 @@ function questionMarkup() {
     return requests
       .map(
         (t) =>
-          `<div class="question-box uncertain"><div class="question-label">${escape(scenario.authorities[t.authority].name)}</div><h3>En komplettering behövs.</h3><p>${escape(t.request.question)}</p><form data-response-form="${t.id}" data-task-revision="${t.revision}"><label class="sr-only" for="response-${t.key}">Ditt svar</label><textarea id="response-${t.key}" data-draft="response.${t.id}" class="field" name="answer" required minlength="3" maxlength="1500" placeholder="Skriv ditt svar…">${escape(drafts.get("response." + t.id) || "")}</textarea><button class="primary" type="submit">Lämna komplettering</button></form></div>`,
+          `<div class="question-box uncertain"><div class="question-label">${escape(authoritiesFor(scenario, caseState.facts)[t.authority].name)}</div><h3>En komplettering behövs.</h3><p>${escape(t.request.question)}</p><form data-response-form="${t.id}" data-task-revision="${t.revision}"><label class="sr-only" for="response-${t.key}">Ditt svar</label><textarea id="response-${t.key}" data-draft="response.${t.id}" class="field" name="answer" required minlength="3" maxlength="1500" placeholder="Skriv ditt svar…">${escape(drafts.get("response." + t.id) || "")}</textarea><button class="primary" type="submit">Lämna komplettering</button></form></div>`,
       )
       .join("");
   return `<div class="question-box ready"><div class="question-label">${escape(caseLabels[caseState.status])}</div><h3>${caseState.status === "completed" ? "Alla uppgifter har fått en bedömning." : "Ärendet är igång."}</h3><p>${caseState.status === "completed" ? "Bedömningarna finns i historiken. De är pilotbedömningar och inga verkliga tillstånd." : "Prova handläggarvyn till höger. Kompletteringar från handläggarna visas här."}</p></div>`;
 }
 function renderCitizen() {
   if (!caseState || standalone) return;
+  renderScenarioHeader();
   $("#count").textContent = `${$("#intent").value.length} / 3 000`;
   $("#question").innerHTML = questionMarkup();
   const d = diagnose(scenario, localFacts);
@@ -371,7 +382,7 @@ function renderTracking() {
       ["accepted", "rejected"].includes(t.status),
     ).length;
   $("#tracking").innerHTML =
-    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>${escape(scenario.title)} · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(scenario.authorities[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
+    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>${escape(scenario.title)} · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(authoritiesFor(scenario, caseState.facts)[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
 }
 function highlight(o) {
   return escape(JSON.stringify(o, null, 2)).replace(
@@ -428,7 +439,7 @@ function workCard(packet) {
   const spec = scenarioFor(packet.scenarioId, packet.scenarioVersion);
   const enabled =
     packet.status === "active" && caseState?.diagnosis?.ready !== false;
-  return `<article class="work-card"><div class="work-top"><span>${escape(spec.authorities[packet.authority].organisation)}</span><span class="badge ${packet.status}">${labels[packet.status]}</span></div><div class="work-inner"><h3>${escape(packet.title)}</h3><p class="judgement">${escape(packet.question)}</p><p class="packet-size">Endast relevant underlag · ${Object.keys(packet.facts).length} uppgifter · v${packet.taskRevision}</p><table><caption class="sr-only">Underlag för handläggarens fråga</caption><tbody>${Object.entries(
+  return `<article class="work-card"><div class="work-top"><span>${escape((packet.authorityInfo || spec.authorities[packet.authority]).organisation)}</span><span class="badge ${packet.status}">${labels[packet.status]}</span></div><div class="work-inner"><h3>${escape(packet.title)}</h3><p class="judgement">${escape(packet.question)}</p><p class="packet-size">Endast relevant underlag · ${Object.keys(packet.facts).length} uppgifter · v${packet.taskRevision}</p><table><caption class="sr-only">Underlag för handläggarens fråga</caption><tbody>${Object.entries(
     packet.facts,
   )
     .map(
@@ -452,15 +463,21 @@ function renderAuthority() {
   const authorities = [...new Set(caseState.tasks.map((t) => t.authority))];
   const packet = packets.find((p) => p.taskId === selectedTask) || packets[0];
   $("#authority").innerHTML =
-    `<nav class="authority-tabs" aria-label="Välj aktör">${authorities.map((a) => `<button data-authority="${a}" aria-pressed="${selectedAuthority === a}" class="${selectedAuthority === a ? "selected" : ""}"><span>${scenario.authorities[a].short}</span>${scenario.authorities[a].name}</button>`).join("")}</nav><div class="pilot-context">Pilotbehörighet: endast ditt eget ärende och den valda aktören.</div>${packets.length > 1 ? `<select id="task-select" class="field" aria-label="Välj handläggaruppgift">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)}</option>`).join("")}</select>` : ""}${workCard(packet)}`;
+    `<nav class="authority-tabs" aria-label="Välj aktör">${authorities.map((a) => `<button data-authority="${a}" aria-pressed="${selectedAuthority === a}" class="${selectedAuthority === a ? "selected" : ""}"><span>${authoritiesFor(scenario, caseState.facts)[a].short}</span>${authoritiesFor(scenario, caseState.facts)[a].name}</button>`).join("")}</nav><div class="pilot-context">Pilotbehörighet: endast ditt eget ärende och den valda aktören.</div>${packets.length > 1 ? `<select id="task-select" class="field" aria-label="Välj handläggaruppgift">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)}</option>`).join("")}</select>` : ""}${workCard(packet)}`;
 }
 function renderStandalone() {
   const target = $("#staff-standalone");
   if (!packets.length) {
+    if (!config.pilotEnabled) {
+      target.innerHTML = config.identityProviders.staff
+        ? '<p class="intro">Logga in med organisationens identitetsleverantör för att se dina tilldelade uppgifter.</p><button class="primary" data-identity-provider="staff">Logga in till handläggning</button>'
+        : '<p class="intro">Handläggningen är stängd tills organisationens inloggning har konfigurerats.</p>';
+      return;
+    }
     target.innerHTML = `<p class="intro">Logga in med din personliga handläggarnyckel. I pilotläget kan du också öppna ditt eget testärende från företagarvyn först.</p><form id="staff-login"><label for="staff-key">Handläggarnyckel</label><input id="staff-key" name="key" class="field" type="password" autocomplete="off" required minlength="32"><button class="primary">Logga in</button></form>`;
     return;
   }
-  target.innerHTML = `<p class="intro">${escape(AUTHORITIES[selectedAuthority]?.name)} · ${packets.length} uppgifter</p><label for="task-select" class="note-label">Välj uppgift</label><select id="task-select" class="field">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)} · ${p.caseId.slice(0, 8)}</option>`).join("")}</select>${workCard(packets.find((p) => p.taskId === selectedTask) || packets[0])}`;
+  target.innerHTML = `<p class="intro">${escape((packets[0]?.authorityInfo || AUTHORITIES[selectedAuthority])?.name)} · ${packets.length} inlästa uppgifter</p><label for="task-select" class="note-label">Välj uppgift</label><select id="task-select" class="field">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)} · ${p.caseId.slice(0, 8)}</option>`).join("")}</select>${staffCursor ? '<button class="secondary" id="staff-more">Visa fler uppgifter</button>' : ""}${workCard(packets.find((p) => p.taskId === selectedTask) || packets[0])}`;
 }
 function render() {
   const focused = document.activeElement?.id;
@@ -502,9 +519,21 @@ function explicitAnswer(key, v, uncertain = false) {
   renderCitizen();
   scheduleSave();
 }
-async function refreshStaff() {
-  const data = await api("/api/staff/tasks");
-  packets = data.tasks;
+async function refreshStaff(extend = false) {
+  const data = await api(
+    "/api/staff/tasks" +
+      (extend && staffCursor
+        ? "?cursor=" + encodeURIComponent(staffCursor)
+        : ""),
+  );
+  packets = extend
+    ? [
+        ...new Map(
+          [...packets, ...data.tasks].map((p) => [p.taskId, p]),
+        ).values(),
+      ]
+    : data.tasks;
+  staffCursor = data.nextCursor;
   selectedAuthority = data.authority;
   if (!packets.some((p) => p.taskId === selectedTask))
     selectedTask = packets[0]?.taskId;
@@ -515,7 +544,7 @@ async function assess(outcome) {
   const p = packets.find((p) => p.taskId === selectedTask) || packets[0];
   if (!p) return;
   const note = $("#assessment-note")?.value || "";
-  await api("/api/staff/assessment", {
+  const result = await api("/api/staff/assessment", {
     method: "POST",
     body: {
       caseId: p.caseId,
@@ -531,8 +560,13 @@ async function assess(outcome) {
     },
   });
   drafts.delete("note." + p.taskId);
-  if (standalone) await refreshStaff();
-  else await loadCase(caseState.id, false);
+  if (standalone) {
+    await refreshStaff();
+    if (!packets.some((x) => x.taskId === p.taskId))
+      packets.unshift(result.packet);
+    selectedTask = p.taskId;
+    renderAuthority();
+  } else await loadCase(caseState.id, false);
   announce(
     outcome === "request"
       ? "Kompletteringen visas nu i företagarvyn."
@@ -547,6 +581,7 @@ $("#intent").addEventListener("input", parseInput);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.id === "staff-more") run(() => refreshStaff(true));
   if (b.dataset.selectScenario)
     run(() => selectScenario(b.dataset.selectScenario));
   if (b.dataset.boolKey)
@@ -647,6 +682,27 @@ document.addEventListener("change", (e) => {
     });
   }
 });
+document.addEventListener("click", (e) => {
+  const provider = e.target.closest("[data-identity-provider]")?.dataset
+    .identityProvider;
+  if (provider)
+    run(async () => {
+      const r = await api("/api/auth/start", {
+        method: "POST",
+        body: { provider },
+      });
+      location.assign(r.authorizationUrl);
+    });
+});
+$("#logout").addEventListener("click", () =>
+  run(async () => {
+    await api("/api/logout", { method: "POST", body: {} });
+    // Clear local raw text and selected actors when leaving this browser session.
+    for (const key of Object.keys(sessionStorage))
+      if (key.startsWith("oppna.")) sessionStorage.removeItem(key);
+    location.reload();
+  }),
+);
 $("#example").addEventListener("click", () => {
   $("#intent").value = scenario.example;
   parseInput();
@@ -707,13 +763,15 @@ document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
 
 function renderScenarioHeader() {
   $("#scenario-title").textContent = scenario.title;
+  $("#municipality-label").textContent =
+    jurisdictionFor(scenario, caseState?.facts || {}).name || "HELA SVERIGE";
   $("#scenario-version").textContent =
     scenario.reviewLevel === "detailed"
       ? `Detaljerad pilot · v${scenario.version}`
       : `Förberedande pilot · v${scenario.version}`;
   $("#intent").placeholder = scenario.example;
   $("#example").textContent =
-    scenario.id === "restaurant.trelleborg"
+    scenario.id === DEFAULT_SCENARIO_ID
       ? "Prova restaurangexemplet"
       : "Prova ett exempel";
   $("#scenario-scope").textContent = scenario.scope;
@@ -806,6 +864,10 @@ async function boot() {
     ? "PILOT · TESTÄRENDEN"
     : "HANDLÄGGNING";
   $("#complete-example").hidden = !config.pilotEnabled;
+  const session = await api(
+    "/api/session" + (standalone ? "?provider=staff" : ""),
+  );
+  $("#logout").hidden = !session.authenticated;
   if (standalone) {
     $("#citizen-workspace").hidden = true;
     $(".servicebar").hidden = true;
@@ -817,9 +879,26 @@ async function boot() {
     }
     return;
   }
+  if (!config.pilotEnabled && !session.authenticated) {
+    $("#citizen-workspace").hidden = true;
+    $(".servicebar").hidden = true;
+    $("#identity-panel").hidden = false;
+    $("#identity-panel").innerHTML = config.identityProviders.citizen
+      ? '<h1>Logga in till ÖPPNA</h1><p class="intro">Din verifierade identitet ger åtkomst till dina egna ärenden. Nyregistrering öppnas när ansvarig operatör har godkänt lokala processer och mottagare.</p><button class="primary" data-identity-provider="citizen">Logga in</button>'
+      : '<h1>Tjänsten förbereds</h1><p class="intro">Nyregistrering är stängd tills ansvarig operatör har konfigurerat inloggning, lokala processer och mottagare.</p>';
+    return;
+  }
   await api("/api/session", { method: "POST", body: {} });
   const data = await api("/api/cases");
   let id = data.cases[0]?.id;
+  if (!id && !config.pilotEnabled) {
+    $("#citizen-workspace").hidden = true;
+    $(".servicebar").hidden = true;
+    $("#identity-panel").hidden = false;
+    $("#identity-panel").innerHTML =
+      '<h1>Dina ärenden</h1><p class="intro">Du har inga ärenden. Nyregistrering är ännu stängd.</p>';
+    return;
+  }
   if (!id) id = (await api("/api/cases", { method: "POST", body: {} })).case.id;
   await loadCase(id);
   $("#save-status").textContent = "Sparat";

@@ -61,7 +61,12 @@ export async function jsonBody(request) {
     i += chunk.length;
   }
   try {
-    return JSON.parse(new TextDecoder().decode(bytes));
+    const body = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    );
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new Error("Object required");
+    return body;
   } catch {
     throw new DomainError("INVALID_JSON", "Uppgifterna har fel format.", 400);
   }
@@ -75,7 +80,7 @@ export function requireOrigin(request) {
       403,
     );
 }
-function cookieName(env, role) {
+export function cookieName(env, role) {
   return `${env.LOCAL_DEV === "true" ? "" : "__Host-"}oppna_${role}`;
 }
 export async function sessionFor(request, env, role = "citizen") {
@@ -87,7 +92,7 @@ export async function sessionFor(request, env, role = "citizen") {
     ?.slice(name.length + 1);
   if (!value || !/^[a-f0-9]{64}$/.test(value)) return null;
   const s = await env.DB.prepare(
-    "SELECT principal_id, role, authority, case_scope, expires_at FROM sessions WHERE token_hash = ? AND expires_at > ?",
+    "SELECT principal_id, role, authority, case_scope, auth_kind, expires_at FROM sessions WHERE token_hash = ? AND expires_at > ?",
   )
     .bind(await digest(value), Date.now())
     .first();
@@ -97,6 +102,7 @@ export async function sessionFor(request, env, role = "citizen") {
         role: s.role,
         authority: s.authority,
         caseId: s.case_scope,
+        authKind: s.auth_kind,
       }
     : null;
 }
@@ -104,7 +110,7 @@ export async function createSession(env, actor) {
   const value = token(),
     maxAge = actor.role === "citizen" ? 60 * 60 * 24 * 7 : 60 * 60 * 8;
   await env.DB.prepare(
-    "INSERT INTO sessions (token_hash,principal_id,role,authority,case_scope,expires_at,created_at) VALUES (?,?,?,?,?,?,?)",
+    "INSERT INTO sessions (token_hash,principal_id,role,authority,case_scope,auth_kind,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?)",
   )
     .bind(
       await digest(value),
@@ -112,6 +118,7 @@ export async function createSession(env, actor) {
       actor.role,
       actor.authority || null,
       actor.caseId || null,
+      actor.authKind || "anonymous",
       Date.now() + maxAge * 1000,
       now(),
     )

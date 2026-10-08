@@ -1,5 +1,10 @@
 import { RESTAURANT } from "./restaurant.mjs";
 import { registry, scenarioVersions } from "./catalog.mjs";
+import {
+  authorityFor,
+  authoritiesFor,
+  jurisdictionFor,
+} from "./authority-routing.mjs";
 export { registry };
 export const clone = (value) => structuredClone(value);
 export class DomainError extends Error {
@@ -70,7 +75,13 @@ export function sanitizeFacts(scenario, incoming, at) {
   const out = {};
   for (const [key, f] of Object.entries(incoming)) {
     const def = scenario.fields[key];
-    if (!def || !f || typeof f !== "object")
+    if (
+      !Object.hasOwn(scenario.fields, key) ||
+      !def ||
+      !f ||
+      typeof f !== "object" ||
+      Array.isArray(f)
+    )
       throw new DomainError("UNKNOWN_FACT", `Okänd uppgift: ${key}`);
     if (!validateValue(def, f.value))
       throw new DomainError(
@@ -83,17 +94,29 @@ export function sanitizeFacts(scenario, incoming, at) {
         "Uppgiften saknar giltig bekräftelsestatus.",
       );
     const source = typeof f.source === "string" ? f.source.slice(0, 240) : "";
-    const method = [
-      "deterministic",
-      "dictionary",
-      "fuzzy",
-      "explicit",
-    ].includes(f.method)
-      ? f.method
-      : "explicit";
+    const method = f.method;
+    if (
+      !["deterministic", "dictionary", "fuzzy", "explicit"].includes(method) ||
+      typeof f.confidence !== "number" ||
+      !Number.isFinite(f.confidence) ||
+      f.confidence < 0 ||
+      f.confidence > 1
+    )
+      throw new DomainError(
+        "INVALID_PROVENANCE",
+        "Uppgiften saknar giltig metod eller säkerhetsgrad.",
+      );
+    const status =
+      f.status === "confirmed" && method === "explicit" && f.confidence === 1
+        ? "confirmed"
+        : method === "fuzzy" || f.confidence < 0.9
+          ? "uncertain"
+          : f.status === "confirmed"
+            ? "proposed"
+            : f.status;
     out[key] = {
       value: typeof f.value === "string" ? f.value.trim() : f.value,
-      status: f.status,
+      status,
       source,
       sourceType: method === "explicit" ? "user_answer" : "user_statement",
       sourceSpan:
@@ -106,11 +129,8 @@ export function sanitizeFacts(scenario, incoming, at) {
           ? { start: f.sourceSpan.start, end: f.sourceSpan.end }
           : null,
       method,
-      confidence:
-        typeof f.confidence === "number" && Number.isFinite(f.confidence)
-          ? Math.max(0, Math.min(1, f.confidence))
-          : 1,
-      verification: f.status === "confirmed" ? "user_confirmed" : "unverified",
+      confidence: f.confidence,
+      verification: status === "confirmed" ? "user_confirmed" : "unverified",
       updatedAt: at,
     };
   }
@@ -128,6 +148,14 @@ export function diagnose(scenario, facts) {
         (!scenario.fields[k].when || matches(scenario.fields[k].when, facts)),
     )
     .map(([k]) => k);
+  if (
+    scenario.fields.end_date &&
+    facts.opening_date &&
+    facts.end_date &&
+    facts.end_date.value < facts.opening_date.value &&
+    !uncertain.includes("end_date")
+  )
+    uncertain.push("end_date");
   const questions = [
     ...missing.map((key) => ({
       key,
@@ -147,9 +175,8 @@ export function diagnose(scenario, facts) {
     questions,
     ready: !missing.length && !uncertain.length,
     requiredCount: required.length,
-    completeCount: required.filter(
-      ([k]) => facts[k] && facts[k].status !== "uncertain",
-    ).length,
+    completeCount: required.filter(([k]) => facts[k] && !uncertain.includes(k))
+      .length,
   };
 }
 const signature = (f) => (f ? JSON.stringify([f.value, f.status]) : null);
@@ -176,7 +203,9 @@ export function deriveTasks(state, emit) {
   const scenario = scenarioFor(state.scenarioId, state.scenarioVersion);
   const previous = state.tasks || [];
   const rules =
-    state.inputStatus === "unsupported"
+    state.inputStatus === "unsupported" ||
+    (scenario.jurisdiction === "SE" &&
+      !jurisdictionFor(scenario, state.facts).resolved)
       ? []
       : scenario.rules.filter((r) => matches(r.when, state.facts));
   const tasks = [];
@@ -189,7 +218,7 @@ export function deriveTasks(state, emit) {
       task = {
         id: `${state.id}:${rule.id}`,
         key: rule.id,
-        authority: rule.authority,
+        authority: authorityFor(rule.authority, scenario, state.facts),
         status: state.submitted ? "active" : "prepared",
         revision: (old?.revision || 0) + 1,
         fingerprint,
@@ -531,6 +560,8 @@ export function packetFor(state, task) {
     taskKey: task.key,
     taskRevision: task.revision,
     authority: task.authority,
+    authorityInfo: authoritiesFor(s, state.facts)[task.authority],
+    jurisdiction: jurisdictionFor(s, state.facts),
     title: rule.title,
     question: rule.question,
     reason: rule.reason,

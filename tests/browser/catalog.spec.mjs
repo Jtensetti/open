@@ -1,18 +1,15 @@
 import { test, expect } from "@playwright/test";
 const representatives = [
-  ["restaurant.trelleborg", "Öppna restaurang i Trelleborg"],
-  ["business.shop.trelleborg", "Öppna butik"],
-  ["building.changeuse.trelleborg", "Ändra användning av lokal"],
-  ["events.event.trelleborg", "Arrangera evenemang"],
-  ["publicspace.container.trelleborg", "Placera container"],
-  ["environment.heatpump.trelleborg", "Installera värmepump"],
-  ["waterwaste.waterconnection.trelleborg", "Ansluta fastighet till VA"],
-  ["traffic.trafficplan.trelleborg", "Förbereda trafikanordningsplan"],
-  ["education.adultvocational.trelleborg", "Planera yrkesutbildning för vuxna"],
-  [
-    "associations.associationgrant.trelleborg",
-    "Förbereda fråga om föreningsbidrag",
-  ],
+  ["restaurant.se", "Öppna restaurang"],
+  ["business.shop.se", "Öppna butik"],
+  ["building.changeuse.se", "Ändra användning av lokal"],
+  ["events.event.se", "Arrangera evenemang"],
+  ["publicspace.container.se", "Placera container"],
+  ["environment.heatpump.se", "Installera värmepump"],
+  ["waterwaste.waterconnection.se", "Ansluta fastighet till VA"],
+  ["traffic.trafficplan.se", "Förbereda trafikanordningsplan"],
+  ["education.adultvocational.se", "Planera yrkesutbildning för vuxna"],
+  ["associations.associationgrant.se", "Förbereda fråga om föreningsbidrag"],
 ];
 for (const [id, title] of representatives) {
   test(`catalogue, real questions, decision and persistence: ${id}`, async ({

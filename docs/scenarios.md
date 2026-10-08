@@ -1,12 +1,12 @@
-# 100 ärendetyper i piloten
+# 100 kommunoberoende ärendetyper
 
-Version 0.3.0 innehåller 100 körbara flöden i tio områden. Alla kan parsas lokalt, få prioriterade följdfrågor, sparas, startas, kompletteras, bedömas och återöppnas. Varje typ har eget versionsatt schema och egen konkret sakfråga.
+Version 0.4.0 innehåller 100 nationella förberedelseflöden i tio områden. Alla delar en motor för lokal tolkning, frågor, lagring, parallella uppgifter, komplettering och mänsklig bedömning. Varje mall har eget versionsatt schema och specifik sakfråga.
 
-**100 pilotflöden betyder inte 100 färdiga myndighetstjänster.** Restaurang har ett detaljerat flöde på 1.0.0. Övriga 99 typer på 0.1.0 förbereder fakta och avgränsade frågor för mänsklig bedömning. Källorna stödjer processområdet; de är inte en fullständig eller verksamhetsgodkänd regelkodifiering. Inga externa mottagare, identitetskontroller eller fullständiga myndighetsansökningar ingår.
+Nya flöden använder `*.se` på 1.0.0, `jurisdiction=SE` och separat ansvarig kommun från SCB:s 290 namn/koder. Postort används aldrig för att gissa kommun. Lokala aktörsroller avgränsas med kommunkod; lokala regler och mottagare är ännu inte verifierade. Gamla Trelleborgavtal på 1.0.0/0.1.0 bevaras för tidigare ärenden.
 
-Skarp aktivering kräver ansvarig verksamhetsägare, granskning av exakta fält/regler, rättsligt underlag, identitet/behörighet, kvittensadapter och driftansvar. Högriskfall som kärnkraft, vapen och akut vård stöds inte. Piloten är avgränsad till Trelleborg; ingen adresskontroll mot register sker.
+**100 körbara förberedelseflöden är inte 100 godkända myndighetstjänster.** Källorna stödjer processområdet; ansvarig verksamhet behöver granska exakta regler och underlag. Inga externa myndighetssystem är anslutna. OIDC är implementerat men en verklig leverantör behöver konfigureras. Högriskfall som kärnkraft, vapen och akut vård stöds inte. Se [produktionskontrakt](production.md).
 
-Samtliga 100 flöden provas genom databas/API med komplettering, beslut och verifierad eventkedja. Gemensamma tester täcker adressvarianter, osäkerhet, negation, flermål, behörighet, samtidig skrivning och ändrat underlag. Webbläsartester provar katalogen och tio representativa typer på dator och mobil.
+Alla 100 nationella flöden och alla 100 tidigare avtal provas genom databas/API med komplettering, bedömning och verifierad eventkedja. Webbläsartester provar katalog, nationell parsing, kommunbyte samt tio representativa typer på dator och mobil.
 
 ## Versionshantering
 
@@ -16,7 +16,7 @@ Gamla ärenden behåller scenarioId och scenarioVersion. Typbyte på utkast jour
 
 | # | Ärendetyp | Område | Specifik sakfråga |
 | --- | --- | --- | --- |
-| 1 | Öppna restaurang i Trelleborg | Mat och servering | Vad används lokalen till i dag? |
+| 1 | Öppna restaurang | Mat och servering | Vad används lokalen till i dag? |
 | 2 | Öppna café | Mat och servering | Vilken mat och vilka drycker ska caféet servera? |
 | 3 | Starta foodtruck | Mat och servering | Var ska matvagnen stå och hur ordnas vatten och rengöring? |
 | 4 | Starta bageri | Mat och servering | Vad ska bakas och hur ska produkterna säljas? |

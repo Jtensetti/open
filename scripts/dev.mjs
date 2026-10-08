@@ -32,6 +32,19 @@ const env = {
   DEPLOYMENT_MODE: process.env.DEPLOYMENT_MODE || "pilot",
   STAFF_KEY_HASHES: process.env.STAFF_KEY_HASHES || "",
 };
+for (const key of [
+  "PUBLIC_ORIGIN",
+  "OIDC_CITIZEN",
+  "OIDC_STAFF",
+  "OIDC_CITIZEN_CLIENT_SECRET",
+  "OIDC_STAFF_CLIENT_SECRET",
+  "OIDC_STAFF_GRANTS",
+  "OPERATOR_NAME",
+  "PRIVACY_URL",
+  "MAINTENANCE_KEY_HASH",
+  "LOG_REQUESTS",
+])
+  if (process.env[key]) env[key] = process.env[key];
 const server = createServer(async (req, res) => {
   try {
     const origin = `http://localhost:${port}`;

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SCENARIOS, registry } from "../src/domain/catalog.mjs";
+import {
+  SCENARIOS,
+  NATIONAL_SCENARIOS,
+  registry,
+} from "../src/domain/catalog.mjs";
 import { parseIntake, detectIntent } from "../src/domain/intake-parser.mjs";
 import {
   extractAddress,
@@ -167,7 +171,7 @@ test("catalog configuration and draft selection preserve versions and reject uns
     h.close();
   }
 });
-for (const spec of SCENARIOS) {
+for (const spec of [...SCENARIOS, ...NATIONAL_SCENARIOS]) {
   test(`persisted intake → scoped task → supplement → human assessment → reload: ${spec.id}`, async () => {
     const h = harness();
     try {

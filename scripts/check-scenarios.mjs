@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { SCENARIOS } from "../src/domain/catalog.mjs";
+import { SCENARIOS, NATIONAL_SCENARIOS } from "../src/domain/catalog.mjs";
 import { parseIntake } from "../src/domain/intake-parser.mjs";
 import { validateValue, diagnose } from "../src/domain/core.mjs";
 assert.equal(SCENARIOS.length, 100);
+assert.equal(NATIONAL_SCENARIOS.length, 100);
 const scenarioIds = new Set();
 let count = 0;
-for (const s of SCENARIOS) {
+for (const s of [...SCENARIOS, ...NATIONAL_SCENARIOS]) {
   assert.ok(!scenarioIds.has(s.id), "Duplicate scenario id");
   scenarioIds.add(s.id);
   assert.equal(s.lifecycle, "pilot");
@@ -63,5 +64,5 @@ for (const s of SCENARIOS) {
   );
 }
 console.log(
-  `${SCENARIOS.length} versioned scenarios, ${count} scoped rules, questions, example parsing and complete demo inputs verified.`,
+  `${NATIONAL_SCENARIOS.length} national and ${SCENARIOS.length} preserved legacy scenarios, ${count} scoped rules, questions, example parsing and complete demo inputs verified.`,
 );

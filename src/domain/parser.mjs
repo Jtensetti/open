@@ -52,7 +52,10 @@ function boolean(text, re) {
   return extracted;
 }
 
-export function parseRestaurant(input) {
+export function parseRestaurant(
+  input,
+  { jurisdictionAgnostic = false, maxCapacity = 500 } = {},
+) {
   const text = String(input).slice(0, 3000),
     t = norm(text),
     facts = {},
@@ -131,6 +134,7 @@ export function parseRestaurant(input) {
       city.index + city[0].length,
     );
   if (
+    !jurisdictionAgnostic &&
     /\bi\s+(Malmö|Lund|Stockholm|Göteborg|Helsingborg|Ystad)(?![\p{L}])/iu.test(
       text,
     )
@@ -171,9 +175,9 @@ export function parseRestaurant(input) {
   if (caps.length) {
     const m = caps[0],
       n = Number(m[1].replaceAll(" ", ""));
-    if (n > 500 || n < 1)
+    if (n > maxCapacity || n < 1)
       unsupported.push(
-        "Den första versionen hanterar 1–500 gäster. Större eller oklara kapaciteter kräver manuell bedömning.",
+        `Ange ett antal mellan 1 och ${maxCapacity}. Större eller oklara kapaciteter kräver manuell bedömning.`,
       );
     else
       facts.capacity = fact(

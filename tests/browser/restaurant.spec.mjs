@@ -19,7 +19,7 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
     .check();
   await page.getByRole("button", { name: "Starta pilotärende" }).click();
   await expect(page.locator("#question")).toContainText("Ärendet är igång");
-  await page.locator('[data-authority="trelleborg.food"]').click();
+  await page.locator('[data-authority="municipality.1287.food"]').click();
   await expect(page.locator(".work-card")).toContainText(
     "Registrering av livsmedelsverksamhet",
   );
@@ -47,7 +47,7 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
   await expect(page.locator(".decision")).toContainText("Underlag granskat");
   await page.reload();
   await expect(page.locator("#save-status")).toHaveText("Sparat");
-  await page.locator('[data-authority="trelleborg.food"]').click();
+  await page.locator('[data-authority="municipality.1287.food"]').click();
   await expect(page.locator(".decision")).toContainText("Beskrivningen räcker");
   await page.getByRole("tab", { name: "Händelser" }).click();
   await expect(page.locator(".audit-status")).toContainText("verifierad");

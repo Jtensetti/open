@@ -33,7 +33,7 @@ Skapa först ett separat stagingkonto/databas om du behöver prova ändrade migr
 `STAFF_KEY_HASHES` är en runtime-hemlighet med JSON-format:
 
 ```json
-[{"subject":"individuell-handlaggare","authority":"trelleborg.food","sha256":"SHA256_AV_PERSONLIG_SLUMPNYCKEL"}]
+[{"subject":"individuell-handlaggare","authority":"municipality.1280.food","sha256":"SHA256_AV_PERSONLIG_SLUMPNYCKEL"}]
 ```
 
 Generera minst 32 slumpbyte per person och förmedla nyckeln separat genom en säker kanal. Lägg bara SHA-256-hashen i hemligheten. Skicka aldrig nycklar i Git eller ärendefakta. `npx wrangler secret put STAFF_KEY_HASHES` läser hemligheten interaktivt. Föredra myndighets-SSO innan skarp användning.
@@ -44,4 +44,4 @@ Hälsokontrollen är `/api/health`. API-svar är `no-store`; klientfel visar ett
 
 Dokumentera ägarskap för Cloudflare-konto, DNS, databaser, backup och larm. Återläsning måste provas på separat databas. Aktivera ett fastställt gallringsjobb för testsessioner, begränsningsräknare, testärenden och gamla outbox-versioner; inget generellt gallringsbeslut tas av appen. Sessionerna upphör att ge åtkomst vid sin expiry även innan raderingen körts.
 
-Piloten är inte lasttestad för stor volym. Aktörsinkorgen hämtar högst 100 uppgifter och ett ägarkonto kan ha högst 25 testärenden. Versionering, behörighet och atomiska uppdateringar är implementerade; BankID/SSO, avtalade myndighetsadaptrar, återställbara medborgarkonton och produktionens driftprocess återstår.
+Piloten är inte lasttestad för stor volym. Aktörsinkorgen är paginerad med högst 100 uppgifter per sida och ett ägarkonto kan ha högst 25 testärenden. Versionering, behörighet och atomiska uppdateringar är implementerade; OIDC/PKCE-stödet är implementerat med stabil principal och rollåterkallelse. Verklig IdP, företrädarskap, lokala profiler, myndighetsadaptrar och driftprocess återstår. Se [produktionskontrakt](production.md).

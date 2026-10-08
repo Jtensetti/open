@@ -15,16 +15,6 @@ export async function readCase(db, id) {
   return JSON.parse(row.state_json);
 }
 export async function createCase(db, ownerId, mode, scenarioId) {
-  const count = await db
-    .prepare("SELECT COUNT(*) AS count FROM cases WHERE owner_id = ?")
-    .bind(ownerId)
-    .first();
-  if (count.count >= 25)
-    throw new DomainError(
-      "CASE_LIMIT",
-      "Du har nått pilotens gräns på 25 ärenden.",
-      429,
-    );
   const state = newCase(crypto.randomUUID(), ownerId, now(), mode, scenarioId);
   const e = {
     type: "case.created",
@@ -38,10 +28,10 @@ export async function createCase(db, ownerId, mode, scenarioId) {
   };
   const payload = canonical(e),
     hash = await digest("ROOT\n" + payload);
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare(
-        "INSERT INTO cases (id,owner_id,revision,state_json,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO cases (id,owner_id,revision,state_json,created_at,updated_at) SELECT ?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM cases WHERE owner_id=?)<25",
       )
       .bind(
         state.id,
@@ -50,13 +40,29 @@ export async function createCase(db, ownerId, mode, scenarioId) {
         JSON.stringify(state),
         state.createdAt,
         state.updatedAt,
+        ownerId,
       ),
     db
       .prepare(
-        "INSERT INTO events (case_id,sequence,type,payload_json,previous_hash,hash,created_at) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO events (case_id,sequence,type,payload_json,previous_hash,hash,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM cases WHERE id=?)",
       )
-      .bind(state.id, 1, e.type, payload, "ROOT", hash, state.createdAt),
+      .bind(
+        state.id,
+        1,
+        e.type,
+        payload,
+        "ROOT",
+        hash,
+        state.createdAt,
+        state.id,
+      ),
   ]);
+  if (results[0].meta.changes !== 1)
+    throw new DomainError(
+      "CASE_LIMIT",
+      "Du har nått gränsen på 25 ärenden.",
+      429,
+    );
   return state;
 }
 export async function commitCommand(
