@@ -1723,3 +1723,353 @@ dialog .muted {
   min-width: 0;
   flex-wrap: wrap;
 }
+
+/* A single, focused citizen journey. The other perspectives are optional. */
+:root {
+  background: #f5f7f8;
+  --green: #125844;
+  --ink: #193831;
+}
+.site-header {
+  max-width: 1200px;
+  padding: 22px 32px;
+}
+.servicebar {
+  max-width: 1100px;
+  margin: 0 auto;
+  border-bottom: 0;
+  padding: 16px 0;
+}
+.workspace {
+  display: block;
+  max-width: 860px;
+  padding: 38px 28px 0;
+}
+.citizen-column,
+.system-column {
+  gap: 22px;
+}
+.intent-panel {
+  padding: 38px 40px;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px #19383105;
+}
+.intake-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--green);
+  margin-bottom: 12px;
+}
+.intent-panel h1 {
+  font-size: clamp(30px, 4vw, 40px);
+  line-height: 1.2;
+  letter-spacing: -1.2px;
+}
+.intent-panel > .intro {
+  font-size: 17px;
+  line-height: 1.6;
+  margin: 12px 0 26px;
+  max-width: 32em;
+  color: #546d65;
+}
+.input-wrap {
+  background: white;
+  border: 1px solid #abc3b9;
+  border-radius: 12px;
+}
+.input-wrap:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #12584412;
+}
+#intent {
+  min-height: 144px;
+  padding: 18px;
+  font-size: 18px;
+}
+#intent::placeholder {
+  color: #6f827b;
+}
+.input-meta {
+  font-size: 12px;
+  color: #61786e;
+  padding: 8px 18px 14px;
+}
+.intake-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0 0;
+}
+.primary,
+.secondary,
+.choice,
+.danger {
+  font-size: 16px;
+  min-height: 46px;
+  padding: 10px 18px;
+  border-radius: 8px;
+}
+#continue-intake {
+  min-width: 132px;
+}
+.text-button,
+.staff-link {
+  font-size: 14px;
+}
+.pilot-tag {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.example-row {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 26px 0 0;
+}
+.example-row > span {
+  flex-basis: 100%;
+  font-size: 14px;
+  color: #657c73;
+  margin-bottom: 3px;
+}
+.example-chip {
+  border: 1px solid #d8e4de;
+  border-radius: 24px;
+  padding: 8px 12px;
+  color: #345d4f;
+  background: #f7faf8;
+  font-size: 14px;
+  min-height: 40px;
+}
+.matched-intent {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding: 24px 0 12px;
+  font-size: 14px;
+  color: var(--green);
+  font-weight: 600;
+}
+.question-box {
+  padding: 22px;
+  border-radius: 12px;
+  margin: 0;
+}
+.question-box h3 {
+  font-size: 21px;
+}
+.question-box p,
+.field {
+  font-size: 16px;
+}
+.question-label,
+.question-label > span,
+.confirm-scope {
+  font-size: 14px;
+}
+.question-box .answer-form {
+  flex-wrap: wrap;
+}
+.facts-panel {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.facts-panel > summary,
+.demo-tools > summary,
+.perspective-details > summary {
+  cursor: pointer;
+  padding: 18px 0;
+  font-size: 16px;
+  font-weight: 550;
+}
+.facts-panel > summary span {
+  font-size: 14px;
+  color: #687d75;
+  margin-left: 8px;
+  font-weight: 400;
+}
+.facts-heading {
+  display: none;
+}
+.fact-row summary {
+  grid-template-columns: 19px minmax(0, 1fr) minmax(0, 1fr);
+  font-size: 14px;
+  padding: 12px 0;
+}
+.demo-tools {
+  margin-top: 10px;
+}
+.demo-tools > summary {
+  color: #60756d;
+  font-size: 14px;
+  font-weight: 400;
+}
+.demo-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.system-column {
+  margin-top: 22px;
+}
+.perspective-details {
+  border-top: 1px solid #d8e2dd;
+}
+.perspective-details > summary {
+  color: #47665a;
+}
+.perspective-details > summary span {
+  font-size: 12px;
+  border: 1px solid #c5d9cc;
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin-left: 8px;
+}
+.terminal {
+  max-width: 100%;
+}
+.case-controls select {
+  font-size: 14px;
+}
+.case-controls #save-status {
+  font-size: 12px;
+}
+.municipality {
+  font-size: 12px;
+}
+footer {
+  max-width: 1100px;
+  margin: 40px auto 20px;
+  padding: 22px 28px;
+}
+footer p {
+  font-size: 14px;
+}
+#question:focus {
+  outline: none;
+}
+.scenario-card strong {
+  font-size: 16px;
+}
+@media (max-width: 1140px) {
+  .servicebar {
+    margin-left: 28px;
+    margin-right: 28px;
+  }
+}
+@media (max-width: 640px) {
+  .site-header {
+    padding: 18px 20px;
+    gap: 12px;
+  }
+  .tagline,
+  .header-right .staff-link {
+    display: none;
+  }
+  .header-right {
+    gap: 12px;
+  }
+  .servicebar {
+    margin: 0 20px;
+    padding: 12px 0;
+    flex-wrap: wrap;
+  }
+  .servicebar > div {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .case-controls {
+    width: 100%;
+  }
+  .case-controls select {
+    max-width: 48%;
+  }
+  .workspace {
+    padding: 18px 14px 0;
+  }
+  .intent-panel {
+    padding: 26px 20px;
+  }
+  .intent-panel > .intro {
+    font-size: 16px;
+  }
+  #intent {
+    font-size: 16px;
+    min-height: 155px;
+    padding: 14px;
+  }
+  .input-meta {
+    padding: 8px 14px 12px;
+    flex-wrap: wrap;
+  }
+  .input-meta #count {
+    display: none;
+  }
+  .intake-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .intake-actions .text-button {
+    min-height: 40px;
+  }
+  .example-row {
+    margin-top: 20px;
+  }
+  .question-box {
+    padding: 18px 15px;
+  }
+  .question-box h3 {
+    font-size: 19px;
+  }
+  .answer-form .primary {
+    width: 100%;
+  }
+  .answer-form .field {
+    flex-basis: 100%;
+  }
+  .fact-row summary {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .fact-row summary strong {
+    grid-column: 2;
+  }
+  footer {
+    margin-top: 26px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+#description-panel > summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: #47665a;
+  padding: 0 0 18px;
+}
+#description-panel[open] {
+  margin-bottom: 24px;
+}
+#description-panel:has(#description-summary[hidden]) {
+  margin-bottom: 0;
+}
+.question-help {
+  margin-top: 8px;
+}
+.question-help summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: #476780;
+}
+.perspective-details {
+  min-width: 0;
+  max-width: 100%;
+}

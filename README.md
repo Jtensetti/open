@@ -21,10 +21,10 @@ npm run dev
 
 Öppna http://localhost:8787. SQLite lagras i `.data/oppna.sqlite`. Starta om servern efter kodändringar. Databasmigrationerna tillämpas automatiskt **bara av utvecklingsservern**.
 
-1. Skriv ditt mål eller öppna ”Välj ärendetyp · 100”. Sök exempelvis butik, garage eller evenemang.
-2. Svara på frågorna. Knappen ”Fyll med testuppgifter” fyller ett komplett testfall.
+1. Beskriv vad du vill göra och tryck på ”Fortsätt”. Ett tydligt mål väljer rätt ärendetyp automatiskt; osäkra formuleringar behöver bekräftas. ”Bläddra bland ärenden” är ett frivilligt alternativ.
+2. Svara på en fråga i taget. Under ”Prova med testuppgifter” fyller knappen ”Fyll med testuppgifter” ett komplett testfall.
 3. Bekräfta och starta pilotärendet.
-4. Välj en aktör, begär komplettering och svara i företagarvyn.
+4. Öppna ”Prova som handläggare”, välj en aktör och begär komplettering. Svara i ditt ärende.
 5. Registrera en bedömning och se hur händelser, status och samma ärende uppdateras.
 6. Ändra ett relevant faktum: berörda bedömningar återställs; oberoende grenar behåller sina bedömningar.
 

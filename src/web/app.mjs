@@ -10,7 +10,7 @@ import {
   jurisdictionFor,
 } from "../domain/authority-routing.mjs";
 import { diagnose, matches, validDate, scenarioFor } from "../domain/core.mjs";
-import { parseIntake } from "../domain/intake-parser.mjs";
+import { parseIntake, detectIntent } from "../domain/intake-parser.mjs";
 const $ = (q) => document.querySelector(q),
   escape = (s) =>
     String(s ?? "").replace(
@@ -40,6 +40,8 @@ let config,
   editKey = null,
   goalConfirmed = false,
   scenarioSelected = false,
+  intakeStarted = false,
+  choosingIntent = false,
   saveTimer,
   busy = false,
   pendingSave = false,
@@ -150,6 +152,10 @@ async function loadCase(id, resetDraft = true) {
   scenarioSelected =
     caseState.inputStatus === "supported" ||
     scenario.id !== DEFAULT_SCENARIO_ID;
+  intakeStarted =
+    caseState.inputStatus === "supported" ||
+    caseState.submitted ||
+    Object.keys(caseState.facts).length > 0;
   renderScenarioHeader();
   if (resetDraft) {
     localFacts = structuredClone(caseState.facts);
@@ -169,13 +175,14 @@ async function loadCase(id, resetDraft = true) {
   await loadEvents();
   await loadPackets();
   render();
+  $("#description-panel").open = !intakeStarted || !parsed.goal;
 }
 async function loadCaseOptions() {
   const data = await api("/api/cases");
   $("#case-select").innerHTML = data.cases
     .map(
       (s) =>
-        `<option value="${s.id}" ${s.id === caseState?.id ? "selected" : ""}>${escape(s.address || s.title || "Nytt ärende")} · ${escape(caseLabels[s.status])}</option>`,
+        `<option value="${s.id}" ${s.id === caseState?.id ? "selected" : ""}>${escape(s.address || (s.status === "draft" && s.scenarioId === DEFAULT_SCENARIO_ID ? "Nytt ärende" : s.title) || "Nytt ärende")} · ${escape(caseLabels[s.status])}</option>`,
     )
     .join("");
 }
@@ -286,6 +293,11 @@ async function saveFacts() {
 }
 function parseInput() {
   const text = $("#intent").value;
+  if (!intakeStarted) {
+    storeRaw(text);
+    $("#count").textContent = `${text.length} / 3 000`;
+    return;
+  }
   const next = parseIntake(text, scenario, { goalSelected: scenarioSelected });
   for (const k of new Set([
     ...Object.keys(previousParsed.facts),
@@ -314,14 +326,15 @@ function parseInput() {
 function questionMarkup() {
   const diagnosis = diagnose(scenario, localFacts),
     scope = inputStatus();
-  if (parsed.suggestedScenario)
-    return `<div class="question-box uncertain"><div class="question-label">En annan ärendetyp passar bättre</div><h3>${escape(registry[parsed.suggestedScenario].title)}</h3><p>Välj ärendetypen för att få rätt följdfrågor. ${caseState?.submitted ? "Ett separat ärende skapas; ditt startade ärende finns kvar." : "Utkastets tidigare uppgifter ersätts av fakta för det nya målet."}</p><button class="primary" data-select-scenario="${parsed.suggestedScenario}">Välj denna ärendetyp</button></div>`;
+  if (!intakeStarted) return "";
   if (scope === "unsupported")
-    return `<div class="question-box stopped"><div class="question-label">Automatiseringen stoppas</div><h3>Det här behöver bedömas separat.</h3><p>${escape(parsed.unsupported[0])}</p><p>Välj ett avgränsat mål i katalogen. Inga uppgifter skickas till en extern myndighet.</p></div>`;
+    return `<div class="question-box stopped"><div class="question-label">Vi behöver förtydliga</div><h3>Berätta lite mer om vad du vill göra.</h3><p>${escape(parsed.unsupported[0])}</p></div>`;
+  if (parsed.suggestedScenario)
+    return `<div class="question-box uncertain"><div class="question-label">Ett annat ärende</div><h3>${escape(registry[parsed.suggestedScenario].title)}</h3><p>${caseState?.submitted ? "Ditt pågående ärende finns kvar. Fortsätt för att starta ett nytt." : "Uppdatera beskrivningen för att få frågor som passar ditt nya mål."}</p></div>`;
   if (scope === "uncertain" && parsed.goal && !goalConfirmed)
-    return `<div class="question-box uncertain"><div class="question-label">Bekräfta målet</div><h3>Är ditt mål: ${escape(scenario.title.toLowerCase())}?</h3><p>Texten är inte entydig. Vi går inte vidare utan ditt besked.</p><button class="primary" data-confirm-goal>Ja, det är mitt mål</button></div>`;
+    return `<div class="question-box uncertain"><div class="question-label">Har vi förstått rätt?</div><h3>Vill du ${escape(scenario.title.toLowerCase())}?</h3><button class="primary" data-confirm-goal>Ja, det stämmer</button><p>Annars kan du ändra din beskrivning ovan.</p></div>`;
   if (!parsed.goal)
-    return `<div class="question-box"><div class="question-label">Ditt första steg</div><h3>Beskriv ditt mål eller välj en ärendetyp.</h3><p>Berätta vad du vill göra och var. Katalogen innehåller 100 pilotflöden. Skriv inte personnummer eller andra känsliga uppgifter.</p></div>`;
+    return `<div class="question-box"><h3>Vad vill du få hjälp med?</h3><p>Skriv till exempel vad du vill bygga, anmäla eller ansöka om. Lägg gärna till vilken kommun det gäller.</p></div>`;
   const q = editKey
     ? { key: editKey, ...scenario.fields[editKey], kind: "edit" }
     : diagnosis.questions[0];
@@ -338,13 +351,13 @@ function questionMarkup() {
       let field =
         q.type === "enum"
           ? `<select id="answer" name="answer" class="field" data-draft="field.${q.key}" required aria-label="${escape(q.question)}"><option value="">Välj…</option>${q.options.map((v) => `<option ${v === current ? "selected" : ""}>${escape(v)}</option>`).join("")}</select>`
-          : `<input id="answer" name="answer" class="field" data-draft="field.${q.key}" type="${q.type === "number" ? "number" : q.type === "date" ? "date" : "text"}" value="${escape(current)}" ${q.type === "number" ? `min="${q.min}" max="${q.max}" step="1"` : `maxlength="${q.max || 160}"`} placeholder="${escape(q.placeholder || "")}" required aria-label="${escape(q.question)}">`;
+          : `<input id="answer" name="answer" class="field" data-draft="field.${q.key}" type="${q.type === "number" ? "number" : q.type === "date" ? "date" : "text"}" value="${escape(current)}" ${q.type === "number" ? `min="${q.min}" max="${q.max}" step="1"` : `maxlength="${q.max || 160}"`} placeholder="${escape(q.key === "address" ? "Gatuadress och ort" : q.placeholder || "")}" required aria-label="${escape(q.question)}">`;
       control = `<form data-answer-form="${q.key}" class="answer-form">${field}<button class="primary" type="submit">Bekräfta</button></form>`;
     }
-    return `<div class="question-box ${q.kind === "uncertain" ? "uncertain" : ""}"><div class="question-label">${q.kind === "uncertain" ? "Bekräfta tolkningen" : q.kind === "edit" ? "Ändra uppgift" : "Nästa fråga"}<span>${diagnosis.questions.length} kvar</span></div><h3>${escape(q.question)}</h3>${q.kind === "uncertain" ? `<blockquote>”${escape(localFacts[q.key]?.source)}”</blockquote>` : ""}<p>${escape(q.help)}</p>${control}${editKey ? '<button class="text-button cancel-edit" data-cancel-edit>Avbryt ändring</button>' : ""}</div>`;
+    return `<div class="question-box ${q.kind === "uncertain" ? "uncertain" : ""}"><div class="question-label">${q.kind === "uncertain" ? "Bekräfta tolkningen" : q.kind === "edit" ? "Ändra uppgift" : "Nästa fråga"}<span>${diagnosis.questions.length} kvar</span></div><h3>${escape(q.question)}</h3>${q.kind === "uncertain" ? `<blockquote>”${escape(localFacts[q.key]?.source)}”</blockquote>` : ""}${q.help ? `<details class="question-help"><summary>Hjälp med svaret</summary><p>${escape(q.help)}</p></details>` : ""}${control}${editKey ? '<button class="text-button cancel-edit" data-cancel-edit>Avbryt ändring</button>' : ""}</div>`;
   }
   if (!caseState?.submitted)
-    return `<div class="question-box ready"><div class="question-label">Redo att starta piloten</div><h3>Kontrollera uppgifterna nedan.</h3><p>${escape(scenario.scope)} Underlagen sparas i ÖPPNA.</p><label class="confirm-scope"><input type="checkbox" id="confirm-scope"> Uppgifterna stämmer och jag använder testuppgifter.</label><button class="primary" data-submit-case>Starta pilotärende</button></div>`;
+    return `<div class="question-box ready"><div class="question-label">Dags att granska</div><h3>Kontrollera uppgifterna nedan.</h3><p>Dina uppgifter sparas i demon. Inget skickas till en myndighet.</p><label class="confirm-scope"><input type="checkbox" id="confirm-scope"> Uppgifterna stämmer och jag använder testuppgifter.</label><button class="primary" data-submit-case>Starta pilotärende</button></div>`;
   const requests = caseState.tasks.filter((t) => t.status === "waiting_info");
   if (requests.length)
     return requests
@@ -353,13 +366,39 @@ function questionMarkup() {
           `<div class="question-box uncertain"><div class="question-label">${escape(authoritiesFor(scenario, caseState.facts)[t.authority].name)}</div><h3>En komplettering behövs.</h3><p>${escape(t.request.question)}</p><form data-response-form="${t.id}" data-task-revision="${t.revision}"><label class="sr-only" for="response-${t.key}">Ditt svar</label><textarea id="response-${t.key}" data-draft="response.${t.id}" class="field" name="answer" required minlength="3" maxlength="1500" placeholder="Skriv ditt svar…">${escape(drafts.get("response." + t.id) || "")}</textarea><button class="primary" type="submit">Lämna komplettering</button></form></div>`,
       )
       .join("");
-  return `<div class="question-box ready"><div class="question-label">${escape(caseLabels[caseState.status])}</div><h3>${caseState.status === "completed" ? "Alla uppgifter har fått en bedömning." : "Ärendet är igång."}</h3><p>${caseState.status === "completed" ? "Bedömningarna finns i historiken. De är pilotbedömningar och inga verkliga tillstånd." : "Prova handläggarvyn till höger. Kompletteringar från handläggarna visas här."}</p></div>`;
+  return `<div class="question-box ready"><div class="question-label">${escape(caseLabels[caseState.status])}</div><h3>${caseState.status === "completed" ? "Alla uppgifter har fått en bedömning." : "Ärendet är igång."}</h3><p>${caseState.status === "completed" ? "Bedömningarna finns i historiken. De är pilotbedömningar och inga verkliga tillstånd." : "Här ser du nästa steg och eventuella frågor. Du kan också prova handläggningen längre ned."}</p></div>`;
 }
 function renderCitizen() {
   if (!caseState || standalone) return;
   renderScenarioHeader();
+  const started = intakeStarted && !!parsed.goal && !parsed.suggestedScenario;
+  const diagnosis = diagnose(scenario, localFacts);
+  $("#intake-title").textContent = started
+    ? scenario.title
+    : "Vad vill du göra?";
+  $("#intake-intro").textContent = started
+    ? caseState.submitted
+      ? "Följ ditt ärende och svara på frågor här."
+      : "Svara på en fråga i taget. Dina uppgifter sparas automatiskt."
+    : "Beskriv ditt ärende med egna ord. Vi hjälper dig med nästa steg.";
+  $("#description-summary").hidden = !intakeStarted;
+  $("#starter-examples").hidden = intakeStarted;
+  $("#facts-panel").hidden = !started;
+  $("#demo-tools").hidden = !started || !config?.pilotEnabled;
+  $("#demo-perspectives").hidden = !started;
+  $("#authority-details").hidden = !caseState.submitted;
+  $(".tracking-panel").hidden = !caseState.submitted;
+  $("#facts-count").textContent =
+    `${diagnosis.completeCount} av ${diagnosis.requiredCount}`;
+  if (diagnosis.ready && !caseState.submitted) $("#facts-panel").open = true;
+  $("#matched-intent").hidden = !started;
+  $("#matched-intent").textContent = `Ditt ärende: ${scenario.title}`;
+  $("#continue-intake").textContent = intakeStarted
+    ? "Uppdatera beskrivning"
+    : "Fortsätt";
   $("#count").textContent = `${$("#intent").value.length} / 3 000`;
   $("#question").innerHTML = questionMarkup();
+  $("#question").hidden = !intakeStarted;
   const d = diagnose(scenario, localFacts);
   const active = Object.entries(scenario.fields).filter(
     ([k, def]) =>
@@ -371,11 +410,9 @@ function renderCitizen() {
     `<div class="facts-heading"><h3>Det här har vi förstått</h3><span>${d.completeCount} / ${d.requiredCount} klara</span></div><div class="progress"><i style="width:${(d.completeCount / Math.max(1, d.requiredCount)) * 100}%"></i></div>${parsed.corrections.length ? `<p class="correction">${parsed.corrections.map((c) => `”${escape(c.from)}” tolkades som ”${escape(c.to)}”`).join(" · ")}</p>` : ""}${active
       .map(([key, def]) => {
         const f = localFacts[key];
-        return `<details class="fact-row"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${def.label}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : def.required ? "Saknas" : "Valfri"}</strong><small>${f ? Math.round(f.confidence * 100) + "%" : "–"}</small></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p><b>Metod:</b> ${escape(f.method)} · ${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäkert" : "Tolkat, inte verifierat"}</p>${f.updatedAt ? `<p>${clock(f.updatedAt)}</p>` : ""}` : `<p>${escape(def.required ? "Uppgiften behövs innan handläggningen kan starta." : def.help)}</p>`}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
+        return `<details class="fact-row"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${def.label}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : def.required ? "Saknas" : "Valfri"}</strong></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p><b>Metod:</b> ${escape(f.method)} · ${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäkert" : "Tolkat, inte verifierat"}</p>${f.updatedAt ? `<p>${clock(f.updatedAt)}</p>` : ""}` : `<p>${escape(def.required ? "Uppgiften behövs innan handläggningen kan starta." : def.help)}</p>`}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
       })
-      .join(
-        "",
-      )}<p class="small-caption">Öppna en rad för spårbarhet. Procenten är ett heuristiskt regelvärde.</p>`;
+      .join("")}`;
 }
 function renderTracking() {
   const s = caseState,
@@ -383,7 +420,7 @@ function renderTracking() {
       ["accepted", "rejected"].includes(t.status),
     ).length;
   $("#tracking").innerHTML =
-    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>${escape(scenario.title)} · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(authoritiesFor(scenario, caseState.facts)[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
+    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>${escape(scenario.title)}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Handläggning</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(authoritiesFor(scenario, caseState.facts)[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
 }
 function highlight(o) {
   return escape(JSON.stringify(o, null, 2)).replace(
@@ -577,7 +614,7 @@ async function assess(outcome) {
   } else await loadCase(caseState.id, false);
   announce(
     outcome === "request"
-      ? "Kompletteringen visas nu i företagarvyn."
+      ? "Kompletteringen visas nu i ditt ärende."
       : "Bedömningen har sparats.",
   );
 }
@@ -589,6 +626,10 @@ $("#intent").addEventListener("input", parseInput);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.starter) {
+    $("#intent").value = b.dataset.starter;
+    run(continueIntake);
+  }
   if (b.id === "staff-refresh") run(() => refreshStaff());
   if (b.id === "staff-more") run(() => refreshStaff(true));
   if (b.dataset.selectScenario)
@@ -648,6 +689,10 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("submit", (e) => {
   const f = e.target;
+  if (f.id === "intake-form") {
+    e.preventDefault();
+    run(continueIntake);
+  }
   if (f.dataset.answerForm) {
     e.preventDefault();
     explicitAnswer(f.dataset.answerForm, new FormData(f).get("answer"));
@@ -744,7 +789,7 @@ $("#new-case").addEventListener("click", () =>
     await saveChain;
     const r = await api("/api/cases", {
       method: "POST",
-      body: { scenarioId: scenario.id },
+      body: { scenarioId: DEFAULT_SCENARIO_ID },
     });
     drafts.clear();
     editKey = null;
@@ -771,18 +816,19 @@ document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
 });
 
 function renderScenarioHeader() {
-  $("#scenario-title").textContent = scenario.title;
+  $("#scenario-title").textContent =
+    intakeStarted && parsed.goal ? scenario.title : "Nytt ärende";
+  $(".servicebar").hidden =
+    !intakeStarted && $("#case-select").options.length <= 1;
   $("#municipality-label").textContent =
     jurisdictionFor(scenario, caseState?.facts || {}).name || "HELA SVERIGE";
   $("#scenario-version").textContent =
     scenario.reviewLevel === "detailed"
       ? `Detaljerad pilot · v${scenario.version}`
       : `Förberedande pilot · v${scenario.version}`;
-  $("#intent").placeholder = scenario.example;
-  $("#example").textContent =
-    scenario.id === DEFAULT_SCENARIO_ID
-      ? "Prova restaurangexemplet"
-      : "Prova ett exempel";
+  $("#intent").placeholder =
+    "Till exempel: Jag vill bygga ett garage i Uppsala…";
+  $("#example").textContent = "Visa exempeltext";
   $("#scenario-scope").textContent = scenario.scope;
   $("#source-version").textContent =
     `${scenario.title} · v${scenario.version} · källkontroll 8 oktober 2026. Automatiken föreslår frågor; rättsliga bedömningar kräver ansvarig handläggare.`;
@@ -814,12 +860,12 @@ function renderCatalog() {
     ? found
         .map(
           (s) =>
-            `<button class="scenario-card ${s.id === scenario.id ? "current-scenario" : ""}" data-select-scenario="${s.id}"><span>${escape(s.family)}</span><strong>${escape(s.title)}</strong><small>${s.reviewLevel === "detailed" ? "Detaljerat pilotflöde" : "Förberedande frågor och mänsklig bedömning"}</small></button>`,
+            `<button class="scenario-card ${s.id === scenario.id ? "current-scenario" : ""}" data-select-scenario="${s.id}"><span>${escape(s.family)}</span><strong>${escape(s.title)}</strong></button>`,
         )
         .join("")
     : '<p class="empty-state">Ingen ärendetyp matchar. Prova ett annat ord. Okända mål automatiseras inte.</p>';
 }
-async function selectScenario(id) {
+async function selectScenario(id, { inferred = false } = {}) {
   if (!registry[id]) return;
   const text = $("#intent").value;
   if (pendingSave) await saveFacts();
@@ -836,20 +882,59 @@ async function selectScenario(id) {
   }
   drafts.clear();
   editKey = null;
-  scenarioSelected = true;
-  goalConfirmed = true;
+  intakeStarted = true;
+  scenarioSelected = !inferred;
+  goalConfirmed = !inferred;
   $("#intent").value = text;
   storeRaw(text);
   // If the old text clearly describes another goal, start from the new example.
   const check = parseIntake(text, scenario, { goalSelected: true });
-  if (check.suggestedScenario || check.unsupported.length)
+  if (!inferred && (check.suggestedScenario || check.unsupported.length))
     $("#intent").value = scenario.example;
   previousParsed = { facts: {}, goal: null, uncertain: [] };
   parseInput();
   $("#catalog-dialog").close();
   await saveFacts();
   $("#intent").focus();
-  announce(`${scenario.title} är valt.`);
+  $("#description-panel").open = false;
+  if (!inferred) announce(`${scenario.title} är valt.`);
+}
+async function continueIntake() {
+  if (choosingIntent || !caseState) return;
+  choosingIntent = true;
+  $("#continue-intake").disabled = true;
+  try {
+    const text = $("#intent").value.trim();
+    if (!text) {
+      $("#intent").focus();
+      return;
+    }
+    const intent = detectIntent(text, SCENARIOS);
+    const check = parseIntake(text, scenario, {
+      goalSelected: scenarioSelected,
+    });
+    intakeStarted = true;
+    if (
+      intent.goal &&
+      intent.goal !== scenario.id &&
+      !check.unsupported.length
+    ) {
+      await selectScenario(intent.goal, { inferred: true });
+    } else {
+      parseInput();
+      await saveFacts();
+    }
+    $("#description-panel").open =
+      !parsed.goal || parsed.unsupported.length > 0;
+    // One clear goal determines the questions; uncertain wording still needs confirmation.
+    renderCitizen();
+    $("#question").setAttribute("tabindex", "-1");
+    $("#question").focus({ preventScroll: true });
+    $("#question").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } finally {
+    choosingIntent = false;
+    $("#continue-intake").disabled = false;
+  }
 }
 $("#open-catalog").addEventListener("click", () => {
   renderCatalog();
@@ -869,9 +954,7 @@ $("#scenario-family").addEventListener("change", renderCatalog);
 
 async function boot() {
   config = await api("/api/config");
-  $("#mode-label").textContent = config.pilotEnabled
-    ? "PILOT · TESTÄRENDEN"
-    : "HANDLÄGGNING";
+  $("#mode-label").textContent = config.pilotEnabled ? "DEMO" : "HANDLÄGGNING";
   $("#complete-example").hidden = !config.pilotEnabled;
   const session = await api(
     "/api/session" + (standalone ? "?provider=staff" : ""),

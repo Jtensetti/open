@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ÖPPNA · 100 vägar genom offentlig service</title>
+    <title>ÖPPNA · Ditt ärende börjar här</title>
     <meta
       name="description"
-      content="En sammanhängande väg från idé till avgränsade handläggarfrågor. ÖPPNA:s pilot med 100 ärendetyper."
+      content="Beskriv vad du vill göra. ÖPPNA hjälper dig med nästa steg i ditt kommunärende."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/app.css" />
@@ -26,10 +26,8 @@
     <div class="servicebar">
       <div>
         <span class="municipality" id="municipality-label">HELA SVERIGE</span
-        ><strong id="scenario-title">Öppna restaurang</strong
-        ><span class="scenario-version" id="scenario-version"
-          >Detaljerad pilot · v1.0</span
-        >
+        ><strong id="scenario-title">Nytt ärende</strong
+        ><span class="scenario-version" id="scenario-version" hidden></span>
       </div>
       <div class="case-controls">
         <label class="sr-only" for="case-select">Välj ditt ärende</label
@@ -48,95 +46,137 @@
     <main class="workspace" id="citizen-workspace">
       <div class="citizen-column">
         <section class="panel intent-panel">
-          <div class="eyebrow">
-            <span>01 / DITT PERSPEKTIV</span
-            ><span class="local">Parsning i din webbläsare</span>
-          </div>
-          <h1>Vad vill du göra?</h1>
-          <p class="intro">
-            Börja med din idé. Vi hjälper dig reda ut nästa steg.
+          <div class="eyebrow intake-eyebrow">DIN VÄG GENOM KOMMUNEN</div>
+          <h1 id="intake-title">Vad vill du göra?</h1>
+          <p class="intro" id="intake-intro">
+            Beskriv ditt ärende med egna ord. Vi hjälper dig med nästa steg.
           </p>
-          <label class="sr-only" for="intent">Beskriv ditt mål</label>
-          <div class="input-wrap">
-            <textarea
-              id="intent"
-              maxlength="3000"
-              placeholder="Jag vill öppna en italiensk restaurang för 40 gäster och servera vin…"
-              spellcheck="false"
-            ></textarea>
-            <div class="input-meta">
-              <span>Hela fritexten skickas aldrig till servern.</span
-              ><span id="count">0 / 3 000</span>
-            </div>
-          </div>
-          <div class="example-row">
-            <button class="secondary" id="open-catalog">
-              Välj ärendetyp · 100
+          <details id="description-panel" open>
+            <summary id="description-summary" hidden>Din beskrivning</summary>
+            <form id="intake-form">
+              <label class="sr-only" for="intent">Beskriv ditt mål</label>
+              <div class="input-wrap">
+                <textarea
+                  id="intent"
+                  maxlength="3000"
+                  required
+                  placeholder="Till exempel: Jag vill bygga ett garage i Uppsala…"
+                  spellcheck="true"
+                  aria-describedby="input-hint"
+                ></textarea>
+                <div class="input-meta">
+                  <span id="input-hint"
+                    >Använd påhittade uppgifter i den här demon.</span
+                  ><span id="count">0 / 3 000</span>
+                </div>
+              </div>
+              <div class="intake-actions">
+                <button class="text-button" type="button" id="open-catalog">
+                  Bläddra bland ärenden</button
+                ><button class="primary" id="continue-intake" type="submit">
+                  Fortsätt
+                </button>
+              </div>
+            </form>
+          </details>
+          <div class="example-row" id="starter-examples">
+            <span>Prova till exempel</span
+            ><button
+              class="example-chip"
+              data-starter="Jag vill bygga ett garage i Uppsala."
+            >
+              Bygga garage</button
+            ><button
+              class="example-chip"
+              data-starter="Jag vill arrangera ett evenemang i Malmö."
+            >
+              Ordna evenemang</button
+            ><button
+              class="example-chip"
+              data-starter="Jag vill installera en värmepump i Kiruna."
+            >
+              Installera värmepump
             </button>
-            <button class="text-button" id="example">
-              Prova restaurangexemplet</button
-            ><button class="text-button" id="complete-example">
-              Fyll med testuppgifter
-            </button>
           </div>
+          <div id="matched-intent" class="sr-only" role="status" hidden></div>
           <div id="question"></div>
-          <div id="facts"></div>
+          <details id="facts-panel" class="facts-panel" hidden>
+            <summary>
+              Granska dina uppgifter <span id="facts-count"></span>
+            </summary>
+            <div id="facts"></div>
+          </details>
+          <details id="demo-tools" class="demo-tools" hidden>
+            <summary>Prova med testuppgifter</summary>
+            <div class="demo-actions">
+              <button class="text-button" id="example">Visa exempeltext</button
+              ><button class="secondary" id="complete-example">
+                Fyll med testuppgifter
+              </button>
+            </div>
+          </details>
         </section>
-        <section class="panel tracking-panel">
+        <section class="panel tracking-panel" hidden>
           <div id="tracking"></div>
         </section>
       </div>
-      <div class="system-column">
-        <section class="terminal">
-          <div class="eyebrow">
-            <span>02 / SYSTEMETS PERSPEKTIV</span
-            ><span class="live"><i></i> Live</span>
-          </div>
-          <h2>Samma ärende, under ytan.</h2>
-          <p>Fakta, regelgrenar och spårbara bedömningar.</p>
-          <div class="terminal-bar">
-            <span id="case-ref">case / …</span>
-            <div role="tablist" aria-label="Systemets vy">
-              <button
-                id="json-tab"
-                role="tab"
-                aria-selected="true"
-                aria-controls="system-content"
-                data-system-tab="json"
-              >
-                Ärendegraf</button
-              ><button
-                id="events-tab"
-                role="tab"
-                aria-selected="false"
-                aria-controls="system-content"
-                data-system-tab="events"
-              >
-                Händelser
-              </button>
+      <div class="system-column" id="demo-perspectives" hidden>
+        <details id="authority-details" class="perspective-details">
+          <summary>Prova som handläggare <span>Demo</span></summary>
+          <section class="panel authority-panel">
+            <div class="eyebrow">
+              <span>DEMONSTRATION</span
+              ><span id="staff-scope">Avgränsat underlag</span>
             </div>
-          </div>
-          <div
-            id="system-content"
-            role="tabpanel"
-            aria-labelledby="json-tab"
-          ></div>
-          <div class="terminal-footer">
-            <span>Beständigt tillstånd · lokal parser</span
-            ><span id="system-revision"></span>
-          </div>
-        </section>
-        <section class="panel authority-panel">
-          <div class="eyebrow">
-            <span>03 / MYNDIGHETERNAS PERSPEKTIV</span
-            ><span id="staff-scope">Avgränsat underlag</span>
-          </div>
-          <h2>Rätt fråga till rätt handläggare.</h2>
-          <p class="intro">
-            Aktören får bara de uppgifter som behövs för just frågan.
-          </p>
-          <div id="authority"></div>
-        </section>
+            <h2>Prova handläggningen</h2>
+            <p class="intro">
+              Här kan du testa en handläggares nästa steg i ditt ärende.
+            </p>
+            <div id="authority"></div>
+          </section>
+        </details>
+        <details id="system-details" class="perspective-details">
+          <summary>Visa tekniska detaljer</summary>
+          <section class="terminal">
+            <div class="eyebrow">
+              <span>TEKNISKA DETALJER</span
+              ><span class="live"><i></i> Live</span>
+            </div>
+            <h2>Samma ärende, under ytan.</h2>
+            <p>Fakta, regelgrenar och spårbara bedömningar.</p>
+            <div class="terminal-bar">
+              <span id="case-ref">case / …</span>
+              <div role="tablist" aria-label="Systemets vy">
+                <button
+                  id="json-tab"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls="system-content"
+                  data-system-tab="json"
+                >
+                  Ärendegraf</button
+                ><button
+                  id="events-tab"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="system-content"
+                  data-system-tab="events"
+                >
+                  Händelser
+                </button>
+              </div>
+            </div>
+            <div
+              id="system-content"
+              role="tabpanel"
+              aria-labelledby="json-tab"
+            ></div>
+            <div class="terminal-footer">
+              <span>Beständigt tillstånd · lokal parser</span
+              ><span id="system-revision"></span>
+            </div>
+          </section>
+        </details>
       </div>
     </main>
     <main id="staff-workspace" hidden>
@@ -148,11 +188,8 @@
     </main>
     <footer>
       <strong>ÖPPNA <span>· Pilot för offentlig service</span></strong>
-      <p>
-        Inga externa myndighetssystem är anslutna. Använd testuppgifter.
-        Granskningar i piloten är inte myndighetsbeslut.
-      </p>
-      <button class="text-button" id="about">Om pilot och källor</button>
+      <p>Demo · Inget skickas till en myndighet.</p>
+      <button class="text-button" id="about">Om tjänsten och demon</button>
     </footer>
     <dialog id="about-dialog">
       <button class="close-dialog" aria-label="Stäng" id="close-about">
@@ -196,8 +233,8 @@
       <div class="eyebrow">ÖPPNA / ÄRENDEKATALOG</div>
       <h2 id="catalog-title">Vad vill du få gjort?</h2>
       <p>
-        100 kommunoberoende flöden. Egna följdfrågor, avgränsade underlag och
-        spårbara bedömningar. Inga externa myndighetsanslutningar.
+        Hitta ett ärende bland 100 exempel. Du kan också beskriva vad du vill
+        göra med egna ord.
       </p>
       <div class="catalog-filters">
         <label

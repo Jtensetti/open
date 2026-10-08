@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, describeCase } from "./helpers.mjs";
 const representatives = [
   ["restaurant.se", "Öppna restaurang"],
   ["business.shop.se", "Öppna butik"],
@@ -19,7 +19,7 @@ for (const [id, title] of representatives) {
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("/");
     await expect(page.locator("#save-status")).toHaveText("Sparat");
-    await page.getByRole("button", { name: "Välj ärendetyp · 100" }).click();
+    await page.getByRole("button", { name: "Bläddra bland ärenden" }).click();
     await expect(page.locator(".scenario-card")).toHaveCount(100);
     await page.getByLabel("Sök ärendetyp").fill(title);
     await page
@@ -27,11 +27,13 @@ for (const [id, title] of representatives) {
       .click();
     await expect(page.locator("#catalog-dialog")).not.toBeVisible();
     await expect(page.locator("#scenario-title")).toHaveText(title);
+    await page.locator("#demo-tools > summary").click();
     await page.getByRole("button", { name: "Fyll med testuppgifter" }).click();
     await page
       .getByLabel("Uppgifterna stämmer och jag använder testuppgifter.")
       .check();
     await page.getByRole("button", { name: "Starta pilotärende" }).click();
+    await page.locator("#authority-details > summary").click();
     await expect(page.locator("#question")).toContainText("Ärendet är igång");
     await expect(page.locator(".work-card")).toBeVisible();
     await page
@@ -54,6 +56,7 @@ for (const [id, title] of representatives) {
       "Underlaget är granskat",
     );
     await page.reload();
+    await page.locator("#authority-details > summary").click();
     await expect(page.locator("#save-status")).toHaveText("Sparat");
     await expect(page.locator("#scenario-title")).toHaveText(title);
     await expect(page.locator(".decision")).toContainText(
@@ -73,28 +76,27 @@ test("free text selects a different scenario and recognizes standalone addresses
 }) => {
   await page.goto("/");
   await expect(page.locator("#save-status")).toHaveText("Sparat");
-  await page
-    .getByLabel("Beskriv ditt mål")
-    .fill("Jag vill öppna en butik i Trelleborg. Storgatan 12.");
-  await page.getByRole("button", { name: "Välj denna ärendetyp" }).click();
+  await describeCase(
+    page,
+    "Jag vill öppna en butik i Trelleborg. Storgatan 12.",
+  );
+
   await expect(page.locator("#scenario-title")).toHaveText("Öppna butik");
   await expect(page.locator("#facts")).toContainText("Storgatan 12");
-  await page
-    .getByLabel("Beskriv ditt mål")
-    .fill(
-      "Jag vill öppna en butik i Trelleborg. Smyge Strandväg 25 B, 231 78 Smygehamn.",
-    );
+  await describeCase(
+    page,
+    "Jag vill öppna en butik i Trelleborg. Smyge Strandväg 25 B, 231 78 Smygehamn.",
+  );
   await expect(page.locator("#facts")).toContainText(
     "Smyge Strandväg 25B, 231 78 Smygehamn",
   );
   await expect(page.locator("#system-content")).toContainText(
     "Smyge Strandväg 25B",
   );
-  await page
-    .getByLabel("Beskriv ditt mål")
-    .fill(
-      "Jag vill öppna en butik i Trelleborg. Storgatan 12 eller Hamngatan 18.",
-    );
+  await describeCase(
+    page,
+    "Jag vill öppna en butik i Trelleborg. Storgatan 12 eller Hamngatan 18.",
+  );
   await expect(page.locator("#question")).toContainText("Bekräfta tolkningen");
   await expect(
     page.getByRole("button", { name: "Starta pilotärende" }),

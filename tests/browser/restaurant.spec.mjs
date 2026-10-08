@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, describeCase } from "./helpers.mjs";
 test("restaurant, scoped authority, completion, persistence and changed facts", async ({
   page,
 }) => {
@@ -12,12 +12,14 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
   await expect(page.locator("#save-status")).toHaveText("Sparat");
   const raw =
     "Jag vill öppna en italiensk resturang i Trelleborg för 40 gäster. Vi kanske serverar vin. Min privata anteckning ska inte skickas med.";
-  await page.getByLabel("Beskriv ditt mål").fill(raw);
+  await describeCase(page, raw);
+  await page.locator("#demo-tools > summary").click();
   await page.getByRole("button", { name: "Fyll med testuppgifter" }).click();
   await page
     .getByLabel("Uppgifterna stämmer och jag använder testuppgifter.")
     .check();
   await page.getByRole("button", { name: "Starta pilotärende" }).click();
+  await page.locator("#authority-details > summary").click();
   await expect(page.locator("#question")).toContainText("Ärendet är igång");
   await page.locator('[data-authority="municipality.1287.food"]').click();
   await expect(page.locator(".work-card")).toContainText(
@@ -46,9 +48,11 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
     .click();
   await expect(page.locator(".decision")).toContainText("Underlag granskat");
   await page.reload();
+  await page.locator("#authority-details > summary").click();
   await expect(page.locator("#save-status")).toHaveText("Sparat");
   await page.locator('[data-authority="municipality.1287.food"]').click();
   await expect(page.locator(".decision")).toContainText("Beskrivningen räcker");
+  await page.locator("#system-details > summary").click();
   await page.getByRole("tab", { name: "Händelser" }).click();
   await expect(page.locator(".audit-status")).toContainText("verifierad");
   expect(requests.some((r) => r.includes(raw))).toBe(false);
@@ -85,11 +89,12 @@ test("restaurant, scoped authority, completion, persistence and changed facts", 
 test("unsupported scope stops submission", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#save-status")).toHaveText("Sparat");
-  await page
-    .getByLabel("Beskriv ditt mål")
-    .fill("Jag vill öppna en restaurang och sälja vapen i Trelleborg.");
+  await describeCase(
+    page,
+    "Jag vill öppna en restaurang och sälja vapen i Trelleborg.",
+  );
   await expect(page.locator("#question")).toContainText(
-    "Automatiseringen stoppas",
+    "Vi behöver förtydliga",
   );
   await expect(
     page.getByRole("button", { name: "Starta pilotärende" }),
