@@ -1,10 +1,10 @@
 # ÖPPNA
 
-100 kommunoberoende flöden: **lokal fritexttolkning → adaptiva frågor → beständigt ärende → avgränsade myndighetsuppgifter → mänsklig bedömning → återkoppling**.
+100 kommunoberoende ärendetyper: **fritext → strukturerade uppgifter → generell handläggarvy**.
 
-Alla tre vyerna utgår från samma versionshanterade ärendetillstånd. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
+Fritext, ärendegraf och handläggarens uppgiftstabell visas samtidigt och uppdateras från samma tolkning. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
 
-**Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och rollbyte i demonstrationen fungerar bara med `DEPLOYMENT_MODE=pilot`.
+**Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och API:ts pilotrollbyte fungerar bara med `DEPLOYMENT_MODE=pilot`.
 
 Version `0.4.0` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
 
@@ -21,14 +21,13 @@ npm run dev
 
 Öppna http://localhost:8787. SQLite lagras i `.data/oppna.sqlite`. Starta om servern efter kodändringar. Databasmigrationerna tillämpas automatiskt **bara av utvecklingsservern**.
 
-1. Beskriv vad du vill göra och tryck på ”Fortsätt”. Ett tydligt mål väljer rätt ärendetyp automatiskt; osäkra formuleringar behöver bekräftas. ”Bläddra bland ärenden” är ett frivilligt alternativ.
-2. Svara på en fråga i taget. Under ”Prova med testuppgifter” fyller knappen ”Fyll med testuppgifter” ett komplett testfall.
-3. Bekräfta och starta pilotärendet.
-4. Öppna ”Prova som handläggare”, välj en aktör och begär komplettering. Svara i ditt ärende.
-5. Registrera en bedömning och se hur händelser, status och samma ärende uppdateras.
-6. Ändra ett relevant faktum: berörda bedömningar återställs; oberoende grenar behåller sina bedömningar.
+1. Beskriv vad du vill göra. Ett tydligt mål väljer rätt ärendetyp medan du skriver; osäkra formuleringar behöver bekräftas.
+2. Se uppgifterna i ärendegrafen och den generella handläggartabellen. Komplettera eller korrigera vid behov.
+3. Uppgifter sparas automatiskt. Fliken ”Händelser” visar den sparade händelsekedjan. Omladdning återställer ärendet och webbläsarens lokala fritext.
 
-`/handlaggning` är en separat arbetsyta. En pilotbehörighet gäller endast det egna testärendet och en aktör. En konfigurerad individuell handläggarnyckel ger endast den aktörens inskickade uppgifter. Utkast exponeras inte för vanliga handläggare.
+Handläggarvyn på startsidan är en skrivskyddad projektion av det egna ärendet; den skapar ingen handläggarbehörighet och skickar inget till myndigheter. Privat anteckning ingår inte i tabellen. Inga gransknings-, överlämnings- eller beslutsknappar visas.
+
+`/handlaggning` visar skrivskyddade uppgifter som servern ger den inloggade handläggaren behörighet till. Utkast exponeras inte för vanliga handläggare. Domänens stöd för aktörsavgränsning, komplettering och bedömning finns kvar i API:t och dess tester.
 
 ## Verifiera
 
@@ -41,7 +40,7 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 100 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, kompletteringsloop, omladdning, lokal fritext och stoppad automatisering. GitHub Actions kör samma kontroller.
+Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 100 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, automatiskt ärendetypbyte, långsamma sparningar, omladdning, lokal fritext och osäkra tolkningar. GitHub Actions kör samma kontroller.
 
 ## Kodens delar
 

@@ -9,18 +9,19 @@ export const test = base.extend({
     await use(context);
   },
 });
+export async function ready(page) {
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-save-state",
+    "saved",
+  );
+  await expect(page.locator("#error-banner")).toBeHidden();
+}
 export async function describeCase(page, text) {
-  if (
-    !(await page.locator("#description-panel").getAttribute("open")) &&
-    (await page.locator("#description-summary").isVisible())
-  ) {
-    if (
-      (await page.locator("#description-panel").getAttribute("open")) === null
-    )
-      await page.locator("#description-summary").click();
-  }
   await page.getByLabel("Beskriv ditt mål").fill(text);
-  await page.locator("#continue-intake").click();
-  await expect(page.locator("#continue-intake")).toBeEnabled();
-  await expect(page.locator("#save-status")).toHaveText("Sparat");
+  await ready(page);
+}
+export async function savedCase(page) {
+  const { cases } = await (await page.request.get("/api/cases")).json();
+  return (await (await page.request.get("/api/cases/" + cases[0].id)).json())
+    .case;
 }
