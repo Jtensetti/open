@@ -1,0 +1,721 @@
+import { RESTAURANT as scenario } from "../domain/restaurant.mjs";
+import { diagnose, matches, validDate } from "../domain/core.mjs";
+import { parseRestaurant, EXAMPLE } from "../domain/parser.mjs";
+const $ = (q) => document.querySelector(q),
+  escape = (s) =>
+    String(s ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+const standalone = location.pathname === "/handlaggning";
+let config,
+  caseState,
+  localFacts = {},
+  parsed = parseRestaurant(""),
+  previousParsed = parsed,
+  selectedAuthority,
+  packets = [],
+  selectedTask,
+  events = [],
+  tab = "json",
+  editKey = null,
+  goalConfirmed = false,
+  saveTimer,
+  busy = false,
+  pendingSave = false,
+  error = "",
+  auditVerified = false;
+const drafts = new Map();
+let saveChain = Promise.resolve();
+const labels = {
+  prepared: "Förberedd",
+  active: "Inväntar bedömning",
+  waiting_info: "Komplettering behövs",
+  accepted: "Underlag granskat",
+  rejected: "Avstyrkt i pilot",
+};
+const caseLabels = {
+  draft: "Utkast",
+  processing: "Handläggning pågår",
+  needs_information: "Uppgifter behövs",
+  completed: "Bedömningarna klara",
+};
+const value = (key, v) =>
+  typeof v === "boolean"
+    ? v
+      ? "Ja"
+      : "Nej"
+    : scenario.fields[key]?.type === "date" && validDate(v)
+      ? new Intl.DateTimeFormat("sv-SE", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        }).format(new Date(v))
+      : String(v) +
+        (scenario.fields[key]?.unit ? " " + scenario.fields[key].unit : "");
+const clock = (t) =>
+  new Intl.DateTimeFormat("sv-SE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(t));
+function announce(text) {
+  $("#toast").textContent = text;
+  $("#toast").hidden = false;
+  setTimeout(() => ($("#toast").hidden = true), 3800);
+}
+function setError(text) {
+  error = text;
+  $("#error-banner").hidden = !text;
+  $("#error-banner").innerHTML = text
+    ? `${escape(text)} <button class="text-button" id="retry-save">Läs in senaste version</button>`
+    : "";
+}
+async function api(path, { method = "GET", body } = {}) {
+  const r = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    const e = new Error(data.error?.message || "Åtgärden misslyckades.");
+    e.status = r.status;
+    e.code = data.error?.code;
+    throw e;
+  }
+  return data;
+}
+async function run(fn) {
+  try {
+    await fn();
+    setError("");
+  } catch (e) {
+    setError(e.message);
+    $("#save-status").textContent = "Kunde inte spara";
+  }
+}
+function rawKey() {
+  return "oppna.raw." + caseState.id;
+}
+function readRaw() {
+  try {
+    return sessionStorage.getItem(rawKey()) || "";
+  } catch {
+    return "";
+  }
+}
+function storeRaw(text) {
+  try {
+    sessionStorage.setItem(rawKey(), text);
+  } catch {}
+}
+function inputStatus() {
+  return parsed.unsupported.length
+    ? "unsupported"
+    : !parsed.goal ||
+        (parsed.uncertain.some((x) => x.key === "goal") && !goalConfirmed)
+      ? "uncertain"
+      : "supported";
+}
+function factSnapshot() {
+  return structuredClone(localFacts);
+}
+async function loadCase(id, resetDraft = true) {
+  const data = await api("/api/cases/" + id);
+  caseState = data.case;
+  if (resetDraft) {
+    localFacts = structuredClone(caseState.facts);
+    let text = readRaw();
+    if (!text && Object.keys(localFacts).length)
+      text = "Jag vill öppna en restaurang i Trelleborg.";
+    $("#intent").value = text;
+    parsed = parseRestaurant(text);
+    previousParsed = parsed;
+    goalConfirmed = caseState.inputStatus === "supported";
+  }
+  await loadCaseOptions();
+  await loadEvents();
+  await loadPackets();
+  render();
+}
+async function loadCaseOptions() {
+  const data = await api("/api/cases");
+  $("#case-select").innerHTML = data.cases
+    .map(
+      (s) =>
+        `<option value="${s.id}" ${s.id === caseState?.id ? "selected" : ""}>${escape(s.address || "Nytt restaurangärende")} · ${escape(caseLabels[s.status])}</option>`,
+    )
+    .join("");
+}
+async function loadEvents() {
+  if (!caseState) return;
+  const data = await api(`/api/cases/${caseState.id}/events`);
+  events = data.events;
+  auditVerified = data.verified;
+}
+async function loadPackets() {
+  if (!caseState?.tasks.length) {
+    packets = [];
+    return;
+  }
+  const authorities = [...new Set(caseState.tasks.map((t) => t.authority))];
+  if (!authorities.includes(selectedAuthority))
+    selectedAuthority = authorities[0];
+  if (config.pilotEnabled)
+    await api(`/api/cases/${caseState.id}/pilot-session`, {
+      method: "POST",
+      body: { authority: selectedAuthority },
+    });
+  try {
+    const data = await api("/api/staff/tasks");
+    packets = data.tasks.filter((p) => p.caseId === caseState.id);
+    if (!packets.some((p) => p.taskId === selectedTask))
+      selectedTask = packets[0]?.taskId;
+  } catch (e) {
+    if (e.status === 401) packets = [];
+    else throw e;
+  }
+}
+async function command(command) {
+  const id = crypto.randomUUID();
+  const payload = {
+    commandId: id,
+    expectedRevision: caseState.revision,
+    command,
+  };
+  const response = await api(`/api/cases/${caseState.id}/commands`, {
+    method: "POST",
+    body: payload,
+  });
+  caseState = response.case;
+  await Promise.all([loadEvents(), loadPackets()]);
+  render();
+  return response;
+}
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  pendingSave = true;
+  $("#save-status").textContent = "Osparade ändringar";
+  saveTimer = setTimeout(() => run(saveFacts), 500);
+}
+async function saveFacts() {
+  clearTimeout(saveTimer);
+  if (!caseState) return;
+  const snapshot = factSnapshot(),
+    status = inputStatus(),
+    reasons = [
+      ...parsed.unsupported,
+      ...parsed.uncertain.filter((x) => x.key === "goal").map((x) => x.message),
+    ];
+  pendingSave = false;
+  const task = async () => {
+    busy = true;
+    $("#save-status").textContent = "Sparar…";
+    try {
+      await command({
+        type: "replace_facts",
+        facts: snapshot,
+        inputStatus: status,
+        inputReasons: reasons,
+      });
+      $("#save-status").textContent = "Sparat";
+      await loadCaseOptions();
+    } catch (e) {
+      pendingSave = true;
+      throw e;
+    } finally {
+      busy = false;
+    }
+  };
+  saveChain = saveChain.catch(() => {}).then(task);
+  await saveChain;
+}
+function parseInput() {
+  const text = $("#intent").value;
+  const next = parseRestaurant(text);
+  for (const k of new Set([
+    ...Object.keys(previousParsed.facts),
+    ...Object.keys(next.facts),
+  ])) {
+    const before = JSON.stringify(previousParsed.facts[k]),
+      after = JSON.stringify(next.facts[k]);
+    if (before !== after) {
+      if (next.facts[k]) localFacts[k] = next.facts[k];
+      else delete localFacts[k];
+    }
+  }
+  if (
+    previousParsed.goal !== next.goal ||
+    previousParsed.uncertain.some((x) => x.key === "goal") !==
+      next.uncertain.some((x) => x.key === "goal")
+  )
+    goalConfirmed = false;
+  parsed = next;
+  previousParsed = next;
+  editKey = null;
+  storeRaw(text);
+  renderCitizen();
+  scheduleSave();
+}
+function questionMarkup() {
+  const diagnosis = diagnose(scenario, localFacts),
+    scope = inputStatus();
+  if (scope === "unsupported")
+    return `<div class="question-box stopped"><div class="question-label">Automatiseringen stoppas</div><h3>Det här behöver bedömas separat.</h3><p>${escape(parsed.unsupported[0])}</p><p>Det första scenariot gäller en ny restaurang i Trelleborg. Inga uppgifter skickas till en extern myndighet.</p></div>`;
+  if (scope === "uncertain" && parsed.goal && !goalConfirmed)
+    return `<div class="question-box uncertain"><div class="question-label">Bekräfta målet</div><h3>Vill du öppna en ny restaurang?</h3><p>Texten är inte entydig. Vi går inte vidare utan ditt besked.</p><button class="primary" data-confirm-goal>Ja, det är mitt mål</button></div>`;
+  if (!parsed.goal)
+    return `<div class="question-box"><div class="question-label">Ditt första steg</div><h3>Beskriv restaurangen du vill öppna.</h3><p>Berätta gärna var, hur många gäster och om du vill servera alkohol. Skriv inte personnummer eller andra känsliga uppgifter.</p></div>`;
+  const q = editKey
+    ? { key: editKey, ...scenario.fields[editKey], kind: "edit" }
+    : diagnosis.questions[0];
+  if (q) {
+    const current = drafts.has("field." + q.key)
+      ? drafts.get("field." + q.key)
+      : q.kind === "edit"
+        ? (localFacts[q.key]?.value ?? "")
+        : "";
+    let control;
+    if (q.type === "boolean")
+      control = `<div class="choice-row"><button class="choice" data-bool-key="${q.key}" data-bool="true">Ja</button><button class="choice" data-bool-key="${q.key}" data-bool="false">Nej</button><button class="text-button" data-unsure="${q.key}">Vet inte</button></div>`;
+    else {
+      let field =
+        q.type === "enum"
+          ? `<select id="answer" name="answer" class="field" data-draft="field.${q.key}" required aria-label="${escape(q.question)}"><option value="">Välj…</option>${q.options.map((v) => `<option ${v === current ? "selected" : ""}>${escape(v)}</option>`).join("")}</select>`
+          : `<input id="answer" name="answer" class="field" data-draft="field.${q.key}" type="${q.type === "number" ? "number" : q.type === "date" ? "date" : "text"}" value="${escape(current)}" ${q.type === "number" ? `min="${q.min}" max="${q.max}" step="1"` : `maxlength="${q.max || 160}"`} placeholder="${escape(q.placeholder || "")}" required aria-label="${escape(q.question)}">`;
+      control = `<form data-answer-form="${q.key}" class="answer-form">${field}<button class="primary" type="submit">Bekräfta</button></form>`;
+    }
+    return `<div class="question-box ${q.kind === "uncertain" ? "uncertain" : ""}"><div class="question-label">${q.kind === "uncertain" ? "Bekräfta tolkningen" : q.kind === "edit" ? "Ändra uppgift" : "Nästa fråga"}<span>${diagnosis.questions.length} kvar</span></div><h3>${escape(q.question)}</h3>${q.kind === "uncertain" ? `<blockquote>”${escape(localFacts[q.key]?.source)}”</blockquote>` : ""}<p>${escape(q.help)}</p>${control}${editKey ? '<button class="text-button cancel-edit" data-cancel-edit>Avbryt ändring</button>' : ""}</div>`;
+  }
+  if (!caseState?.submitted)
+    return `<div class="question-box ready"><div class="question-label">Redo att starta piloten</div><h3>Kontrollera uppgifterna nedan.</h3><p>Du bekräftar att detta gäller en stadigvarande restaurang på en plats i Trelleborg. Underlagen sparas i ÖPPNA.</p><label class="confirm-scope"><input type="checkbox" id="confirm-scope"> Uppgifterna stämmer och jag använder testuppgifter.</label><button class="primary" data-submit-case>Starta pilotärende</button></div>`;
+  const requests = caseState.tasks.filter((t) => t.status === "waiting_info");
+  if (requests.length)
+    return requests
+      .map(
+        (t) =>
+          `<div class="question-box uncertain"><div class="question-label">${escape(scenario.authorities[t.authority].name)}</div><h3>En komplettering behövs.</h3><p>${escape(t.request.question)}</p><form data-response-form="${t.id}" data-task-revision="${t.revision}"><label class="sr-only" for="response-${t.key}">Ditt svar</label><textarea id="response-${t.key}" data-draft="response.${t.id}" class="field" name="answer" required minlength="3" maxlength="1500" placeholder="Skriv ditt svar…">${escape(drafts.get("response." + t.id) || "")}</textarea><button class="primary" type="submit">Lämna komplettering</button></form></div>`,
+      )
+      .join("");
+  return `<div class="question-box ready"><div class="question-label">${escape(caseLabels[caseState.status])}</div><h3>${caseState.status === "completed" ? "Alla uppgifter har fått en bedömning." : "Ärendet är igång."}</h3><p>${caseState.status === "completed" ? "Bedömningarna finns i historiken. De är pilotbedömningar och inga verkliga tillstånd." : "Prova handläggarvyn till höger. Kompletteringar från handläggarna visas här."}</p></div>`;
+}
+function renderCitizen() {
+  if (!caseState || standalone) return;
+  $("#count").textContent = `${$("#intent").value.length} / 3 000`;
+  $("#question").innerHTML = questionMarkup();
+  const d = diagnose(scenario, localFacts);
+  const active = Object.entries(scenario.fields).filter(
+    ([k, def]) =>
+      localFacts[k] ||
+      (def.required && (!def.when || matches(def.when, localFacts))),
+  );
+  $("#facts").innerHTML =
+    `<div class="facts-heading"><h3>Det här har vi förstått</h3><span>${d.completeCount} / ${d.requiredCount} klara</span></div><div class="progress"><i style="width:${(d.completeCount / Math.max(1, d.requiredCount)) * 100}%"></i></div>${parsed.corrections.length ? `<p class="correction">${parsed.corrections.map((c) => `”${escape(c.from)}” tolkades som ”${escape(c.to)}”`).join(" · ")}</p>` : ""}${active
+      .map(([key, def]) => {
+        const f = localFacts[key];
+        return `<details class="fact-row"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${def.label}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : "Saknas"}</strong><small>${f ? Math.round(f.confidence * 100) + "%" : "–"}</small></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p><b>Metod:</b> ${escape(f.method)} · ${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäkert" : "Tolkat, inte verifierat"}</p>${f.updatedAt ? `<p>${clock(f.updatedAt)}</p>` : ""}` : "<p>Uppgiften behövs innan handläggningen kan starta.</p>"}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
+      })
+      .join(
+        "",
+      )}<p class="small-caption">Öppna en rad för spårbarhet. Procenten är ett heuristiskt regelvärde.</p>`;
+}
+function renderTracking() {
+  const s = caseState,
+    done = s.tasks.filter((t) =>
+      ["accepted", "rejected"].includes(t.status),
+    ).length;
+  $("#tracking").innerHTML =
+    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>Restaurang i Trelleborg · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(scenario.authorities[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
+}
+function highlight(o) {
+  return escape(JSON.stringify(o, null, 2)).replace(
+    /(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null|\d+(?:\.\d+)?)\b/g,
+    (m, s, k, n) =>
+      s
+        ? `<span class="${k ? "json-key" : "json-string"}">${s}</span>${k || ""}`
+        : `<span class="json-number">${n}</span>`,
+  );
+}
+function renderSystem() {
+  if (!caseState) return;
+  $("#case-ref").textContent = "case / " + caseState.id.slice(0, 8);
+  $("#system-revision").textContent =
+    `revision ${caseState.revision} · ${events.length} events`;
+  document.querySelectorAll("[data-system-tab]").forEach((b) => {
+    const active = b.dataset.systemTab === tab;
+    b.setAttribute("aria-selected", String(active));
+    b.tabIndex = active ? 0 : -1;
+  });
+  $("#system-content").setAttribute(
+    "aria-labelledby",
+    tab === "json" ? "json-tab" : "events-tab",
+  );
+  if (tab === "events") {
+    $("#system-content").innerHTML =
+      `<div class="events"><div class="audit-status">${auditVerified ? "✓ Händelsekedjan är verifierad" : "Kontrollerar händelsekedjan…"}</div>${[
+        ...events,
+      ]
+        .reverse()
+        .map(
+          (e) =>
+            `<details class="event"><summary><time>${clock(e.at)}</time><span>${escape(e.type)}<small>#${e.sequence} · ${escape(e.actor.authority || e.actor.role)}</small></span></summary><pre>${escape(JSON.stringify(e.data, null, 2))}</pre><small class="event-hash">SHA-256 ${e.hash.slice(0, 18)}…</small></details>`,
+        )
+        .join("")}</div>`;
+    return;
+  }
+  const s = caseState;
+  $("#system-content").innerHTML =
+    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>restaurant.trelleborg</span></div><div><strong>facts <em>${Object.keys(s.facts).length}</em></strong>${Object.entries(
+      s.facts,
+    )
+      .map(
+        ([k, f]) =>
+          `<span>${escape(k)} <i>${escape(JSON.stringify(f.value))}</i></span>`,
+      )
+      .join(
+        "",
+      )}</div><div><strong>missing</strong>${s.diagnosis.missing.map((k) => `<span class="amber">${k}</span>`).join("") || '<span class="dim">[ ]</span>'}</div><div><strong>uncertain</strong>${s.diagnosis.uncertain.map((k) => `<span class="amber">${k}</span>`).join("") || '<span class="dim">[ ]</span>'}</div><div><strong>parallel_tasks</strong>${s.tasks.map((t) => `<span>${escape(t.key)} <i>${escape(t.status)}</i></span>`).join("")}</div></div><pre class="code" tabindex="0" aria-label="Ärendets JSON">${highlight({ case_id: s.id, scenario: s.scenarioId, scenario_version: s.scenarioVersion, revision: s.revision, input_status: s.inputStatus, facts: s.facts, missing: s.diagnosis.missing, uncertain: s.diagnosis.uncertain, derived: s.tasks.map((t) => ({ task: t.key, authority: t.authority, status: t.status, revision: t.revision })), integration: "not_connected" })}</pre></div>`;
+}
+function workCard(packet) {
+  if (!packet)
+    return '<div class="empty-state">Ingen handläggaruppgift är vald.</div>';
+  const enabled =
+    packet.status === "active" && caseState?.diagnosis?.ready !== false;
+  return `<article class="work-card"><div class="work-top"><span>${escape(scenario.authorities[packet.authority].organisation)}</span><span class="badge ${packet.status}">${labels[packet.status]}</span></div><div class="work-inner"><h3>${escape(packet.title)}</h3><p class="judgement">${escape(packet.question)}</p><p class="packet-size">Endast relevant underlag · ${Object.keys(packet.facts).length} uppgifter · v${packet.taskRevision}</p><table><caption class="sr-only">Underlag för handläggarens fråga</caption><tbody>${Object.entries(
+    packet.facts,
+  )
+    .map(
+      ([k, f]) =>
+        `<tr><th scope="row">${scenario.fields[k].label}</th><td>${escape(value(k, f.value))}</td></tr>`,
+    )
+    .join(
+      "",
+    )}</tbody></table>${packet.response ? `<div class="response"><b>Komplettering från medborgaren</b><p>${escape(packet.response.answer)}</p></div>` : ""}${packet.decision ? `<div class="decision ${packet.status}"><b>${labels[packet.status]}</b><p>${escape(packet.decision.note)}</p><small>${clock(packet.decision.at)}</small></div>` : packet.request ? `<div class="response waiting"><b>Inväntar komplettering</b><p>${escape(packet.request.question)}</p></div>` : `${!enabled ? '<p class="waiting-note">Ärendet behöver startas och uppgifterna vara kompletta innan en bedömning kan registreras.</p>' : ""}<label class="note-label" for="assessment-note">Motivering eller kompletteringsfråga</label><textarea class="field" id="assessment-note" data-draft="note.${packet.taskId}" minlength="5" maxlength="1500" ${!enabled ? "disabled" : ""} placeholder="Beskriv din bedömning eller ställ en konkret fråga…">${escape(drafts.get("note." + packet.taskId) || "")}</textarea><div class="decision-actions"><button class="secondary" data-outcome="request" ${!enabled ? "disabled" : ""}>Begär komplettering</button><button class="primary" data-outcome="accepted" ${!enabled ? "disabled" : ""}>Underlag klart</button><button class="danger" data-outcome="rejected" ${!enabled ? "disabled" : ""}>Avstyrk</button></div>`}<details class="work-details"><summary>Regel, källa och avgränsning</summary><p>${escape(packet.reason)}</p><p>${escape(packet.limitations)}</p>${packet.sources.map((x) => `<a href="${escape(x.url)}" target="_blank" rel="noreferrer">${escape(x.title)}</a>`).join("")}</details><details class="work-details"><summary>Visa aktörens exakta datapaket</summary><pre>${escape(JSON.stringify(packet, null, 2))}</pre></details></div></article>`;
+}
+function renderAuthority() {
+  if (standalone) {
+    renderStandalone();
+    return;
+  }
+  if (!caseState?.tasks.length) {
+    $("#authority").innerHTML =
+      '<div class="empty-state"><b>Handläggarfrågorna förbereds här.</b><p>Beskriv en restaurang så visar regelmotorn vilka aktörer som kan behövas.</p></div>';
+    return;
+  }
+  const authorities = [...new Set(caseState.tasks.map((t) => t.authority))];
+  const packet = packets.find((p) => p.taskId === selectedTask) || packets[0];
+  $("#authority").innerHTML =
+    `<nav class="authority-tabs" aria-label="Välj aktör">${authorities.map((a) => `<button data-authority="${a}" aria-pressed="${selectedAuthority === a}" class="${selectedAuthority === a ? "selected" : ""}"><span>${scenario.authorities[a].short}</span>${scenario.authorities[a].name}</button>`).join("")}</nav><div class="pilot-context">Pilotbehörighet: endast ditt eget ärende och den valda aktören.</div>${packets.length > 1 ? `<select id="task-select" class="field" aria-label="Välj handläggaruppgift">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)}</option>`).join("")}</select>` : ""}${workCard(packet)}`;
+}
+function renderStandalone() {
+  const target = $("#staff-standalone");
+  if (!packets.length) {
+    target.innerHTML = `<p class="intro">Logga in med din personliga handläggarnyckel. I pilotläget kan du också öppna ditt eget testärende från företagarvyn först.</p><form id="staff-login"><label for="staff-key">Handläggarnyckel</label><input id="staff-key" name="key" class="field" type="password" autocomplete="off" required minlength="32"><button class="primary">Logga in</button></form>`;
+    return;
+  }
+  target.innerHTML = `<p class="intro">${escape(scenario.authorities[selectedAuthority]?.name)} · ${packets.length} uppgifter</p><label for="task-select" class="note-label">Välj uppgift</label><select id="task-select" class="field">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)} · ${p.caseId.slice(0, 8)}</option>`).join("")}</select>${workCard(packets.find((p) => p.taskId === selectedTask) || packets[0])}`;
+}
+function render() {
+  const focused = document.activeElement?.id;
+  const el = focused ? document.getElementById(focused) : null;
+  const selection = el && "selectionStart" in el ? el.selectionStart : null;
+  renderCitizen();
+  if (!standalone) {
+    renderTracking();
+    renderSystem();
+  }
+  renderAuthority();
+  if (focused && focused !== "intent") {
+    const replacement = document.getElementById(focused);
+    if (replacement) {
+      replacement.focus({ preventScroll: true });
+      try {
+        if (selection !== null)
+          replacement.setSelectionRange(selection, selection);
+      } catch {}
+    }
+  }
+}
+function explicitAnswer(key, v, uncertain = false) {
+  if (scenario.fields[key].type === "number") v = Number(v);
+  localFacts[key] = {
+    value: v,
+    status: uncertain ? "uncertain" : "confirmed",
+    source: uncertain
+      ? "Användaren är osäker"
+      : `${scenario.fields[key].label}: ${value(key, v)}`,
+    sourceSpan: null,
+    method: "explicit",
+    confidence: uncertain ? 0.5 : 1,
+  };
+  drafts.delete("field." + key);
+  editKey = null;
+  renderCitizen();
+  scheduleSave();
+}
+async function refreshStaff() {
+  const data = await api("/api/staff/tasks");
+  packets = data.tasks;
+  selectedAuthority = data.authority;
+  if (!packets.some((p) => p.taskId === selectedTask))
+    selectedTask = packets[0]?.taskId;
+  renderAuthority();
+}
+async function assess(outcome) {
+  await saveChain;
+  const p = packets.find((p) => p.taskId === selectedTask) || packets[0];
+  if (!p) return;
+  const note = $("#assessment-note")?.value || "";
+  await api("/api/staff/assessment", {
+    method: "POST",
+    body: {
+      caseId: p.caseId,
+      expectedRevision: p.caseRevision,
+      commandId: crypto.randomUUID(),
+      command: {
+        type: "assessment",
+        taskId: p.taskId,
+        taskRevision: p.taskRevision,
+        outcome,
+        note,
+      },
+    },
+  });
+  drafts.delete("note." + p.taskId);
+  if (standalone) await refreshStaff();
+  else await loadCase(caseState.id, false);
+  announce(
+    outcome === "request"
+      ? "Kompletteringen visas nu i företagarvyn."
+      : "Bedömningen har sparats.",
+  );
+}
+document.addEventListener("input", (e) => {
+  if (e.target.dataset.draft)
+    drafts.set(e.target.dataset.draft, e.target.value);
+});
+$("#intent").addEventListener("input", parseInput);
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.boolKey)
+    explicitAnswer(b.dataset.boolKey, b.dataset.bool === "true");
+  if (b.dataset.unsure) {
+    explicitAnswer(b.dataset.unsure, false, true);
+    announce(
+      "Uppgiften är markerad som osäker. Automatiken väntar på bekräftelse.",
+    );
+  }
+  if (b.dataset.edit) {
+    editKey = b.dataset.edit;
+    renderCitizen();
+    $("#answer")?.focus();
+    $("#question").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  if (b.hasAttribute("data-cancel-edit")) {
+    editKey = null;
+    renderCitizen();
+  }
+  if (b.hasAttribute("data-confirm-goal")) {
+    goalConfirmed = true;
+    renderCitizen();
+    scheduleSave();
+  }
+  if (b.dataset.authority)
+    run(async () => {
+      selectedAuthority = b.dataset.authority;
+      await loadPackets();
+      renderAuthority();
+    });
+  if (b.dataset.outcome) run(() => assess(b.dataset.outcome));
+  if (b.dataset.systemTab) {
+    tab = b.dataset.systemTab;
+    renderSystem();
+  }
+  if (b.hasAttribute("data-submit-case"))
+    run(async () => {
+      if (!$("#confirm-scope")?.checked)
+        throw new Error("Bekräfta uppgifterna innan du startar pilotärendet.");
+      if (pendingSave) await saveFacts();
+      await saveChain;
+      await command({ type: "submit", confirmScope: true });
+      localFacts = structuredClone(caseState.facts);
+      render();
+      announce(
+        "Pilotärendet har startats. Uppgifterna kan handläggas parallellt.",
+      );
+    });
+  if (b.id === "retry-save")
+    run(async () => {
+      if (caseState) await loadCase(caseState.id, false);
+      if (pendingSave) await saveFacts();
+    });
+});
+document.addEventListener("submit", (e) => {
+  const f = e.target;
+  if (f.dataset.answerForm) {
+    e.preventDefault();
+    explicitAnswer(f.dataset.answerForm, new FormData(f).get("answer"));
+  }
+  if (f.dataset.responseForm) {
+    e.preventDefault();
+    run(async () => {
+      await saveChain;
+      await command({
+        type: "respond",
+        taskId: f.dataset.responseForm,
+        taskRevision: Number(f.dataset.taskRevision),
+        answer: new FormData(f).get("answer"),
+      });
+      drafts.delete("response." + f.dataset.responseForm);
+      announce("Kompletteringen är sparad hos rätt aktör.");
+    });
+  }
+  if (f.id === "staff-login") {
+    e.preventDefault();
+    run(async () => {
+      await api("/api/staff/login", {
+        method: "POST",
+        body: { key: new FormData(f).get("key") },
+      });
+      await refreshStaff();
+    });
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.id === "task-select") {
+    selectedTask = e.target.value;
+    renderAuthority();
+  }
+  if (e.target.id === "case-select") {
+    const id = e.target.value;
+    run(async () => {
+      if (pendingSave) await saveFacts();
+      await saveChain;
+      await loadCase(id);
+    });
+  }
+});
+$("#example").addEventListener("click", () => {
+  $("#intent").value = EXAMPLE;
+  parseInput();
+});
+$("#complete-example").addEventListener("click", () => {
+  if (!config.pilotEnabled) return;
+  if (!parsed.goal) {
+    $("#intent").value = EXAMPLE;
+    parseInput();
+  }
+  const sample = {
+    tax_registration_needed: true,
+    address: "Storgatan 12, Trelleborg",
+    municipality: "Trelleborg",
+    capacity: 40,
+    alcohol: true,
+    current_use: "Restaurang",
+    building_changes: false,
+    outdoor: true,
+    public_land: true,
+    outdoor_area: 30,
+    food_preparation: "Tillagning på plats",
+    portions: 120,
+    opening_date: "2027-05-01",
+  };
+  for (const [k, v] of Object.entries(sample))
+    if (!localFacts[k] || localFacts[k].status === "uncertain")
+      localFacts[k] = {
+        value: v,
+        status: "confirmed",
+        source: "Testuppgift vald av användaren",
+        sourceSpan: null,
+        method: "explicit",
+        confidence: 1,
+      };
+  goalConfirmed = true;
+  renderCitizen();
+  scheduleSave();
+  announce("Testuppgifter ifyllda. Kontrollera innan du startar.");
+});
+$("#new-case").addEventListener("click", () =>
+  run(async () => {
+    if (pendingSave) await saveFacts();
+    await saveChain;
+    const r = await api("/api/cases", { method: "POST", body: {} });
+    drafts.clear();
+    editKey = null;
+    await loadCase(r.case.id);
+    $("#intent").focus();
+  }),
+);
+$("#about").addEventListener("click", () => $("#about-dialog").showModal());
+$("#close-about").addEventListener("click", () => $("#about-dialog").close());
+document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+    e.preventDefault();
+    tab =
+      e.key === "Home"
+        ? "json"
+        : e.key === "End"
+          ? "events"
+          : tab === "json"
+            ? "events"
+            : "json";
+    renderSystem();
+    $("#" + (tab === "json" ? "json-tab" : "events-tab")).focus();
+  }
+});
+async function boot() {
+  config = await api("/api/config");
+  $("#mode-label").textContent = config.pilotEnabled
+    ? "PILOT · TESTÄRENDEN"
+    : "HANDLÄGGNING";
+  $("#complete-example").hidden = !config.pilotEnabled;
+  $("#source-links").innerHTML = Object.values(scenario.sources)
+    .map(
+      (s) =>
+        `<a href="${s.url}" target="_blank" rel="noreferrer">${escape(s.title)}</a>`,
+    )
+    .join("");
+  if (standalone) {
+    $("#citizen-workspace").hidden = true;
+    $(".servicebar").hidden = true;
+    $("#staff-workspace").hidden = false;
+    try {
+      await refreshStaff();
+    } catch {
+      renderStandalone();
+    }
+    return;
+  }
+  await api("/api/session", { method: "POST", body: {} });
+  const data = await api("/api/cases");
+  let id = data.cases[0]?.id;
+  if (!id) id = (await api("/api/cases", { method: "POST", body: {} })).case.id;
+  await loadCase(id);
+  $("#save-status").textContent = "Sparat";
+  setInterval(() => {
+    if (
+      document.hidden ||
+      busy ||
+      pendingSave ||
+      document.activeElement?.matches("input,textarea,select")
+    )
+      return;
+    run(async () => {
+      const response = await api("/api/cases/" + caseState.id);
+      if (response.case.revision !== caseState.revision)
+        await loadCase(caseState.id, true);
+    });
+  }, 3500);
+}
+run(boot);
