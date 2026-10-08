@@ -1,5 +1,11 @@
 import { RESTAURANT } from "../domain/restaurant.mjs";
-import { DomainError, citizenView, packetFor } from "../domain/core.mjs";
+import {
+  DomainError,
+  citizenView,
+  packetFor,
+  scenarioFor,
+} from "../domain/core.mjs";
+import { AUTHORITIES, catalogSummary } from "../domain/catalog.mjs";
 import {
   readCase,
   createCase,
@@ -122,16 +128,17 @@ async function handle(request, env, ctx, assets) {
   if (!["GET", "HEAD"].includes(request.method)) requireOrigin(request);
   if (path === "/api/config" && request.method === "GET")
     return json({
-      version: "0.2.0",
+      version: "0.3.0",
       mode: env.DEPLOYMENT_MODE || "closed",
       scenario: RESTAURANT,
+      scenarios: catalogSummary(),
       integrations: "not_connected",
       staffConfigured: !!env.STAFF_KEY_HASHES,
       pilotEnabled: env.DEPLOYMENT_MODE === "pilot",
     });
   if (path === "/api/health" && request.method === "GET") {
     await env.DB.prepare("SELECT 1 AS ok").first();
-    return json({ status: "ok", version: "0.2.0" });
+    return json({ status: "ok", version: "0.3.0" });
   }
   if (path === "/api/session" && request.method === "POST") {
     const existing = await sessionFor(request, env);
@@ -158,6 +165,8 @@ async function handle(request, env, ctx, assets) {
           status: s.status,
           updatedAt: s.updatedAt,
           address: s.facts.address?.value || null,
+          scenarioId: s.scenarioId,
+          title: scenarioFor(s.scenarioId, s.scenarioVersion).title,
         };
       }),
     });
@@ -171,8 +180,13 @@ async function handle(request, env, ctx, assets) {
       );
     const a = await citizen(request, env);
     await rateLimit(env, request, "new_case", 30);
+    const body = await jsonBody(request);
     return json(
-      { case: citizenView(await createCase(env.DB, a.id, "pilot")) },
+      {
+        case: citizenView(
+          await createCase(env.DB, a.id, "pilot", body.scenarioId),
+        ),
+      },
       201,
     );
   }
@@ -205,7 +219,11 @@ async function handle(request, env, ctx, assets) {
           "Åtgärden måste ha ett unikt id och aktuell version.",
           400,
         );
-      if (!["replace_facts", "submit", "respond"].includes(body.command?.type))
+      if (
+        !["select_scenario", "replace_facts", "submit", "respond"].includes(
+          body.command?.type,
+        )
+      )
         throw new DomainError(
           "FORBIDDEN",
           "Åtgärden hör inte till medborgarvyn.",
@@ -233,7 +251,10 @@ async function handle(request, env, ctx, assets) {
         );
       const body = await jsonBody(request);
       if (
-        !Object.hasOwn(RESTAURANT.authorities, body.authority) ||
+        !Object.hasOwn(
+          scenarioFor(state.scenarioId, state.scenarioVersion).authorities,
+          body.authority,
+        ) ||
         !state.tasks.some((t) => t.authority === body.authority)
       )
         throw new DomainError(
@@ -282,7 +303,7 @@ async function handle(request, env, ctx, assets) {
     if (
       !entry ||
       !entry.subject ||
-      !Object.hasOwn(RESTAURANT.authorities, entry.authority)
+      !Object.hasOwn(AUTHORITIES, entry.authority)
     )
       throw new DomainError("LOGIN_FAILED", "Inloggningen misslyckades.", 401);
     return json({ authority: entry.authority }, 200, {

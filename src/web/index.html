@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ÖPPNA · Restaurang i Trelleborg</title>
+    <title>ÖPPNA · 100 vägar genom offentlig service</title>
     <meta
       name="description"
-      content="En sammanhängande väg från idé till avgränsade handläggarfrågor. ÖPPNA:s restaurangpilot."
+      content="En sammanhängande väg från idé till avgränsade handläggarfrågor. ÖPPNA:s pilot med 100 ärendetyper."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/app.css" />
@@ -25,8 +25,10 @@
     <div class="servicebar">
       <div>
         <span class="municipality">TRELLEBORG</span
-        ><strong>Öppna restaurang</strong
-        ><span class="scenario-version">Scenario 01 · v1.0</span>
+        ><strong id="scenario-title">Öppna restaurang</strong
+        ><span class="scenario-version" id="scenario-version"
+          >Detaljerad pilot · v1.0</span
+        >
       </div>
       <div class="case-controls">
         <label class="sr-only" for="case-select">Välj ditt ärende</label
@@ -61,6 +63,9 @@
             </div>
           </div>
           <div class="example-row">
+            <button class="secondary" id="open-catalog">
+              Välj ärendetyp · 100
+            </button>
             <button class="text-button" id="example">
               Prova restaurangexemplet</button
             ><button class="text-button" id="complete-example">
@@ -135,7 +140,7 @@
       </section>
     </main>
     <footer>
-      <strong>ÖPPNA <span>· Restaurangpiloten</span></strong>
+      <strong>ÖPPNA <span>· Pilot för offentlig service</span></strong>
       <p>
         Inga externa myndighetssystem är anslutna. Använd testuppgifter.
         Granskningar i piloten är inte myndighetsbeslut.
@@ -153,11 +158,11 @@
         lokalt; endast strukturerade uppgifter och korta källutdrag sparas.
         Procenttal är regelvärden, inte uppmätta sannolikheter.
       </p>
+      <p id="scenario-scope"></p>
       <p>
-        Första scenariot gäller en stadigvarande restaurang i Trelleborg.
-        Underlagen är inte fullständiga myndighetsansökningar. Identitet,
-        behörig företrädare, fastighetsuppgifter och organisationsspecifika
-        kontroller återstår innan riktiga ärenden kan tas emot.
+        100 ärendetyper delar samma ärendegraf. Restaurang har ett detaljerat
+        pilotflöde; övriga flöden förbereder specifika sakfrågor för mänsklig
+        bedömning. Underlagen är inte fullständiga myndighetsansökningar.
       </p>
       <p>
         Pilotläget låter dig prova handläggning av ditt eget testärende. Servern
@@ -167,10 +172,39 @@
       </p>
       <h3>Processens källor</h3>
       <div id="source-links"></div>
-      <p class="muted">
+      <p class="muted" id="source-version">
         Scenarioversion 1.0.0 · källkontrollerat 8 oktober 2026. Automatiken
         föreslår frågor; rättsliga bedömningar kräver ansvarig handläggare.
       </p>
+    </dialog>
+    <dialog id="catalog-dialog" aria-labelledby="catalog-title">
+      <button
+        class="close-dialog"
+        aria-label="Stäng ärendekatalog"
+        id="close-catalog"
+      >
+        ×
+      </button>
+      <div class="eyebrow">ÖPPNA / ÄRENDEKATALOG</div>
+      <h2 id="catalog-title">Vad vill du få gjort?</h2>
+      <p>
+        100 pilotflöden. Egna följdfrågor, avgränsade underlag och spårbara
+        bedömningar. Inga externa myndighetsanslutningar.
+      </p>
+      <div class="catalog-filters">
+        <label
+          >Sök ärendetyp<input
+            id="scenario-search"
+            class="field"
+            type="search"
+            placeholder="Butik, garage, evenemang, adress…"
+            autocomplete="off" /></label
+        ><label
+          >Område<select id="scenario-family" class="field"></select
+        ></label>
+      </div>
+      <p id="catalog-count" role="status"></p>
+      <div id="scenario-results"></div>
     </dialog>
     <div id="toast" role="status" hidden></div>
     <noscript>JavaScript behövs för att tolka texten lokalt.</noscript>

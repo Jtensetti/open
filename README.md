@@ -1,10 +1,14 @@
 # ÖPPNA
 
-En sammanhängande restaurangpilot för Trelleborg: **lokal fritexttolkning → adaptiva frågor → beständigt ärende → avgränsade myndighetsuppgifter → mänsklig bedömning → återkoppling**.
+100 sammanhängande pilotflöden för Trelleborg: **lokal fritexttolkning → adaptiva frågor → beständigt ärende → avgränsade myndighetsuppgifter → mänsklig bedömning → återkoppling**.
 
 Alla tre vyerna utgår från samma versionshanterade ärendetillstånd. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
 
 **Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och rollbyte i demonstrationen fungerar bara med `DEPLOYMENT_MODE=pilot`.
+
+Restaurang behåller sitt detaljerade flöde på `1.0.0`. Övriga 99 ärendetyper har förberedande flöden på `0.1.0`: riktiga state-övergångar, ingen automatisk rättslig prövning. Se [katalog och avgränsning](docs/scenarios.md).
+
+Publicerad pilot: https://open.tensetti.io
 
 ## Kör lokalt
 
@@ -17,7 +21,7 @@ npm run dev
 
 Öppna http://localhost:8787. SQLite lagras i `.data/oppna.sqlite`. Starta om servern efter kodändringar. Databasmigrationerna tillämpas automatiskt **bara av utvecklingsservern**.
 
-1. Skriv ditt restaurangmål, eller välj restaurangexemplet.
+1. Skriv ditt mål eller öppna ”Välj ärendetyp · 100”. Sök exempelvis butik, garage eller evenemang.
 2. Svara på frågorna. Knappen ”Fyll med testuppgifter” fyller ett komplett testfall.
 3. Bekräfta och starta pilotärendet.
 4. Välj en aktör, begär komplettering och svara i företagarvyn.
@@ -37,14 +41,15 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Domän- och API-tester använder riktig SQLite. Runtime-testet kör den byggda Worker-filen med workerd och D1. Playwright provar desktop och mobil, kompletteringsloop, omladdning, lokal fritext och stoppad automatisering. GitHub Actions kör samma kontroller.
+127 domän- och API-tester använder riktig SQLite, inklusive komplettering, bedömning och återöppning för samtliga 100 scenarier. Runtime-testet kör den byggda Worker-filen med workerd och D1. Playwright provar desktop och mobil, kompletteringsloop, omladdning, lokal fritext och stoppad automatisering. GitHub Actions kör samma kontroller.
 
 ## Kodens delar
 
 | Del | Ansvar |
 | --- | --- |
 | `src/domain/restaurant.mjs` | Versionsatt scenario, fält, villkor, myndigheter och kontrollerade källor |
-| `src/domain/parser.mjs` | Lokal deterministisk parser: synonymer, felstavning, negation och osäkerhet |
+| `src/domain/catalog-data.mjs`, `catalog.mjs` | 100 versionerade scenarier i tio områden med egna frågor och minimala datapaket |
+| `src/domain/intake-parser.mjs`, `extractors.mjs`, `parser.mjs` | Lokal deterministisk parser: adresser, datum, synonymer, felstavning, negation och osäkerhet |
 | `src/domain/core.mjs` | Validering, frågeprioritering, regelmotor och tillståndsövergångar |
 | `src/server/repository.mjs` | Atomiska uppdateringar, händelsekedja, uppgiftsprojektion och outbox |
 | `src/server/app.mjs` | Behörighetskontrollerat API |

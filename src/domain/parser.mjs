@@ -1,5 +1,5 @@
 import { RESTAURANT } from "./restaurant.mjs";
-import { validDate } from "./core.mjs";
+import { extractAddress, extractDate, extractBoolean } from "./extractors.mjs";
 export const EXAMPLE =
   "Jag vill öppna en italiensk restaurang i Trelleborg för 40 gäster. Vi vill servera vin och ha uteservering.";
 const norm = (s) => s.toLocaleLowerCase("sv-SE").normalize("NFC");
@@ -43,38 +43,15 @@ function fact(
   };
 }
 function boolean(text, re) {
-  const evidence = [...text.matchAll(re)].map((m) => {
-    const c = clause(text, m.index),
-      before = text
-        .slice(c.start, m.index)
-        .trim()
-        .split(/\s+/)
-        .slice(-7)
-        .join(" "),
-      slice = text.slice(c.start, c.end);
-    return {
-      ...c,
-      value: !(
-        /\b(inte|ej|ingen|inget|inga|utan)\b/i.test(before) ||
-        /alkoholfri/i.test(m[0])
-      ),
-      uncertain: maybe(slice) || /inte bara/i.test(slice),
-    };
-  });
-  if (!evidence.length) return null;
-  const first = evidence[0];
-  const uncertain = evidence.some(
-    (e) => e.uncertain || e.value !== first.value,
-  );
-  return fact(
-    text,
-    first.value,
-    first.start,
-    evidence.at(-1).end,
-    "deterministic",
-    uncertain,
-  );
+  const words = re.source
+    .replace(/^\(\?<\!\[\\p\{L\}\]\)/, "")
+    .replace(/\(\?!\[\\p\{L\}\]\)$/, "");
+  const extracted = extractBoolean(text, words);
+  if (extracted && /alkoholfri/i.test(extracted.source))
+    extracted.value = false;
+  return extracted;
 }
+
 export function parseRestaurant(input) {
   const text = String(input).slice(0, 3000),
     t = norm(text),
@@ -212,38 +189,15 @@ export function parseRestaurant(input) {
           /\d+\s*[-–]\s*$/.test(text.slice(0, m.index)),
       );
   }
-  const address = text.match(
-    /(?:på|adress(?:en)?\s*:)\s+((?:[\p{L}]+\s+){0,2}[\p{L}]*(?:gatan|vägen|gränd|allén)\s+\d+[A-Za-z]?(?:,\s*[\p{L}]+)?)/iu,
-  );
-  if (address) {
-    const start = address.index + address[0].indexOf(address[1]);
-    facts.address = fact(
-      text,
-      address[1],
-      start,
-      start + address[1].length,
-      "deterministic",
-      maybe(text.slice(clause(text, start).start, clause(text, start).end)),
-    );
-  }
-  const dates = [...text.matchAll(/\b20\d{2}-\d{2}-\d{2}\b/g)];
-  if (dates.length) {
-    const m = dates[0];
-    if (validDate(m[0]))
-      facts.opening_date = fact(
-        text,
-        m[0],
-        m.index,
-        m.index + m[0].length,
-        "deterministic",
-        dates.length > 1,
-      );
-    else
-      uncertain.push({
-        key: "opening_date",
-        message: "Datumet är inte ett giltigt kalenderdatum.",
-      });
-  }
+  const address = extractAddress(text);
+  if (address) facts.address = address;
+  const dateResult = extractDate(text);
+  if (dateResult.fact) facts.opening_date = dateResult.fact;
+  if (dateResult.invalid.length)
+    uncertain.push({
+      key: "opening_date",
+      message: "Datumet är inte ett giltigt kalenderdatum.",
+    });
   const use = text.match(
     /(?:lokalen (?:är|används som)|tidigare (?:var lokalen|användning är))\s+(?:en |ett )?(restaurang|butik|kontor|lager|bostad)/i,
   );

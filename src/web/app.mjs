@@ -1,6 +1,7 @@
-import { RESTAURANT as scenario } from "../domain/restaurant.mjs";
-import { diagnose, matches, validDate } from "../domain/core.mjs";
-import { parseRestaurant, EXAMPLE } from "../domain/parser.mjs";
+import { SCENARIOS, registry, AUTHORITIES } from "../domain/catalog.mjs";
+let scenario = registry["restaurant.trelleborg"];
+import { diagnose, matches, validDate, scenarioFor } from "../domain/core.mjs";
+import { parseIntake } from "../domain/intake-parser.mjs";
 const $ = (q) => document.querySelector(q),
   escape = (s) =>
     String(s ?? "").replace(
@@ -18,7 +19,7 @@ const standalone = location.pathname === "/handlaggning";
 let config,
   caseState,
   localFacts = {},
-  parsed = parseRestaurant(""),
+  parsed = parseIntake("", scenario),
   previousParsed = parsed,
   selectedAuthority,
   packets = [],
@@ -27,6 +28,7 @@ let config,
   tab = "json",
   editKey = null,
   goalConfirmed = false,
+  scenarioSelected = false,
   saveTimer,
   busy = false,
   pendingSave = false,
@@ -47,12 +49,12 @@ const caseLabels = {
   needs_information: "Uppgifter behövs",
   completed: "Bedömningarna klara",
 };
-const value = (key, v) =>
+const value = (key, v, spec = scenario) =>
   typeof v === "boolean"
     ? v
       ? "Ja"
       : "Nej"
-    : scenario.fields[key]?.type === "date" && validDate(v)
+    : spec.fields[key]?.type === "date" && validDate(v)
       ? new Intl.DateTimeFormat("sv-SE", {
           day: "numeric",
           month: "long",
@@ -60,7 +62,7 @@ const value = (key, v) =>
           timeZone: "UTC",
         }).format(new Date(v))
       : String(v) +
-        (scenario.fields[key]?.unit ? " " + scenario.fields[key].unit : "");
+        (spec.fields[key]?.unit ? " " + scenario.fields[key].unit : "");
 const clock = (t) =>
   new Intl.DateTimeFormat("sv-SE", {
     hour: "2-digit",
@@ -133,6 +135,11 @@ function factSnapshot() {
 async function loadCase(id, resetDraft = true) {
   const data = await api("/api/cases/" + id);
   caseState = data.case;
+  scenario = scenarioFor(caseState.scenarioId, caseState.scenarioVersion);
+  scenarioSelected =
+    caseState.inputStatus === "supported" ||
+    scenario.id !== "restaurant.trelleborg";
+  renderScenarioHeader();
   if (resetDraft) {
     localFacts = structuredClone(caseState.facts);
     let text = readRaw();
@@ -141,9 +148,9 @@ async function loadCase(id, resetDraft = true) {
       Object.keys(localFacts).length &&
       caseState.inputStatus === "supported"
     )
-      text = "Jag vill öppna en restaurang i Trelleborg.";
+      text = scenario.example;
     $("#intent").value = text;
-    parsed = parseRestaurant(text);
+    parsed = parseIntake(text, scenario, { goalSelected: scenarioSelected });
     previousParsed = parsed;
     goalConfirmed = caseState.inputStatus === "supported";
   }
@@ -157,7 +164,7 @@ async function loadCaseOptions() {
   $("#case-select").innerHTML = data.cases
     .map(
       (s) =>
-        `<option value="${s.id}" ${s.id === caseState?.id ? "selected" : ""}>${escape(s.address || "Nytt restaurangärende")} · ${escape(caseLabels[s.status])}</option>`,
+        `<option value="${s.id}" ${s.id === caseState?.id ? "selected" : ""}>${escape(s.address || s.title || "Nytt ärende")} · ${escape(caseLabels[s.status])}</option>`,
     )
     .join("");
 }
@@ -202,6 +209,16 @@ async function command(command) {
     body: payload,
   });
   caseState = response.case;
+  if (
+    scenario.id !== caseState.scenarioId ||
+    scenario.version !== caseState.scenarioVersion
+  ) {
+    scenario = scenarioFor(caseState.scenarioId, caseState.scenarioVersion);
+    localFacts = structuredClone(caseState.facts);
+    parsed = parseIntake($("#intent").value, scenario, { goalSelected: true });
+    previousParsed = parsed;
+    renderScenarioHeader();
+  }
   await Promise.all([loadEvents(), loadPackets()]);
   render();
   return response;
@@ -246,7 +263,7 @@ async function saveFacts() {
 }
 function parseInput() {
   const text = $("#intent").value;
-  const next = parseRestaurant(text);
+  const next = parseIntake(text, scenario, { goalSelected: scenarioSelected });
   for (const k of new Set([
     ...Object.keys(previousParsed.facts),
     ...Object.keys(next.facts),
@@ -274,12 +291,14 @@ function parseInput() {
 function questionMarkup() {
   const diagnosis = diagnose(scenario, localFacts),
     scope = inputStatus();
+  if (parsed.suggestedScenario)
+    return `<div class="question-box uncertain"><div class="question-label">En annan ärendetyp passar bättre</div><h3>${escape(registry[parsed.suggestedScenario].title)}</h3><p>Välj ärendetypen för att få rätt följdfrågor. ${caseState?.submitted ? "Ett separat ärende skapas; ditt startade ärende finns kvar." : "Utkastets tidigare uppgifter ersätts av fakta för det nya målet."}</p><button class="primary" data-select-scenario="${parsed.suggestedScenario}">Välj denna ärendetyp</button></div>`;
   if (scope === "unsupported")
-    return `<div class="question-box stopped"><div class="question-label">Automatiseringen stoppas</div><h3>Det här behöver bedömas separat.</h3><p>${escape(parsed.unsupported[0])}</p><p>Det första scenariot gäller en ny restaurang i Trelleborg. Inga uppgifter skickas till en extern myndighet.</p></div>`;
+    return `<div class="question-box stopped"><div class="question-label">Automatiseringen stoppas</div><h3>Det här behöver bedömas separat.</h3><p>${escape(parsed.unsupported[0])}</p><p>Välj ett avgränsat mål i katalogen. Inga uppgifter skickas till en extern myndighet.</p></div>`;
   if (scope === "uncertain" && parsed.goal && !goalConfirmed)
-    return `<div class="question-box uncertain"><div class="question-label">Bekräfta målet</div><h3>Vill du öppna en ny restaurang?</h3><p>Texten är inte entydig. Vi går inte vidare utan ditt besked.</p><button class="primary" data-confirm-goal>Ja, det är mitt mål</button></div>`;
+    return `<div class="question-box uncertain"><div class="question-label">Bekräfta målet</div><h3>Är ditt mål: ${escape(scenario.title.toLowerCase())}?</h3><p>Texten är inte entydig. Vi går inte vidare utan ditt besked.</p><button class="primary" data-confirm-goal>Ja, det är mitt mål</button></div>`;
   if (!parsed.goal)
-    return `<div class="question-box"><div class="question-label">Ditt första steg</div><h3>Beskriv restaurangen du vill öppna.</h3><p>Berätta gärna var, hur många gäster och om du vill servera alkohol. Skriv inte personnummer eller andra känsliga uppgifter.</p></div>`;
+    return `<div class="question-box"><div class="question-label">Ditt första steg</div><h3>Beskriv ditt mål eller välj en ärendetyp.</h3><p>Berätta vad du vill göra och var. Katalogen innehåller 100 pilotflöden. Skriv inte personnummer eller andra känsliga uppgifter.</p></div>`;
   const q = editKey
     ? { key: editKey, ...scenario.fields[editKey], kind: "edit" }
     : diagnosis.questions[0];
@@ -302,7 +321,7 @@ function questionMarkup() {
     return `<div class="question-box ${q.kind === "uncertain" ? "uncertain" : ""}"><div class="question-label">${q.kind === "uncertain" ? "Bekräfta tolkningen" : q.kind === "edit" ? "Ändra uppgift" : "Nästa fråga"}<span>${diagnosis.questions.length} kvar</span></div><h3>${escape(q.question)}</h3>${q.kind === "uncertain" ? `<blockquote>”${escape(localFacts[q.key]?.source)}”</blockquote>` : ""}<p>${escape(q.help)}</p>${control}${editKey ? '<button class="text-button cancel-edit" data-cancel-edit>Avbryt ändring</button>' : ""}</div>`;
   }
   if (!caseState?.submitted)
-    return `<div class="question-box ready"><div class="question-label">Redo att starta piloten</div><h3>Kontrollera uppgifterna nedan.</h3><p>Du bekräftar att detta gäller en stadigvarande restaurang på en plats i Trelleborg. Underlagen sparas i ÖPPNA.</p><label class="confirm-scope"><input type="checkbox" id="confirm-scope"> Uppgifterna stämmer och jag använder testuppgifter.</label><button class="primary" data-submit-case>Starta pilotärende</button></div>`;
+    return `<div class="question-box ready"><div class="question-label">Redo att starta piloten</div><h3>Kontrollera uppgifterna nedan.</h3><p>${escape(scenario.scope)} Underlagen sparas i ÖPPNA.</p><label class="confirm-scope"><input type="checkbox" id="confirm-scope"> Uppgifterna stämmer och jag använder testuppgifter.</label><button class="primary" data-submit-case>Starta pilotärende</button></div>`;
   const requests = caseState.tasks.filter((t) => t.status === "waiting_info");
   if (requests.length)
     return requests
@@ -321,13 +340,14 @@ function renderCitizen() {
   const active = Object.entries(scenario.fields).filter(
     ([k, def]) =>
       localFacts[k] ||
+      k === "citizen_note" ||
       (def.required && (!def.when || matches(def.when, localFacts))),
   );
   $("#facts").innerHTML =
     `<div class="facts-heading"><h3>Det här har vi förstått</h3><span>${d.completeCount} / ${d.requiredCount} klara</span></div><div class="progress"><i style="width:${(d.completeCount / Math.max(1, d.requiredCount)) * 100}%"></i></div>${parsed.corrections.length ? `<p class="correction">${parsed.corrections.map((c) => `”${escape(c.from)}” tolkades som ”${escape(c.to)}”`).join(" · ")}</p>` : ""}${active
       .map(([key, def]) => {
         const f = localFacts[key];
-        return `<details class="fact-row"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${def.label}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : "Saknas"}</strong><small>${f ? Math.round(f.confidence * 100) + "%" : "–"}</small></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p><b>Metod:</b> ${escape(f.method)} · ${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäkert" : "Tolkat, inte verifierat"}</p>${f.updatedAt ? `<p>${clock(f.updatedAt)}</p>` : ""}` : "<p>Uppgiften behövs innan handläggningen kan starta.</p>"}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
+        return `<details class="fact-row"><summary><span class="fact-icon ${!f ? "missing" : f.status === "uncertain" ? "uncertain" : ""}">${!f ? "?" : f.status === "uncertain" ? "!" : "✓"}</span><span>${def.label}</span><strong class="${!f ? "missing-value" : ""}">${f ? escape(value(key, f.value)) : def.required ? "Saknas" : "Valfri"}</strong><small>${f ? Math.round(f.confidence * 100) + "%" : "–"}</small></summary><div class="provenance">${f ? `<p><b>Källa:</b> ”${escape(f.source)}”</p><p><b>Metod:</b> ${escape(f.method)} · ${f.status === "confirmed" ? "Bekräftat av dig" : f.status === "uncertain" ? "Osäkert" : "Tolkat, inte verifierat"}</p>${f.updatedAt ? `<p>${clock(f.updatedAt)}</p>` : ""}` : `<p>${escape(def.required ? "Uppgiften behövs innan handläggningen kan starta." : def.help)}</p>`}<button class="text-button" data-edit="${key}">${f ? "Ändra eller bekräfta" : "Ange uppgift"}</button></div></details>`;
       })
       .join(
         "",
@@ -339,7 +359,7 @@ function renderTracking() {
       ["accepted", "rejected"].includes(t.status),
     ).length;
   $("#tracking").innerHTML =
-    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>Restaurang i Trelleborg · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(scenario.authorities[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
+    `<div class="tracking-head"><h2>Följ ärende</h2><span class="badge ${s.status === "completed" ? "accepted" : ""}">${caseLabels[s.status]}</span></div><ol class="timeline"><li class="done"><i>✓</i><div><b>Ditt mål är registrerat</b><p>${escape(scenario.title)} · scenario v${s.scenarioVersion}</p></div></li><li class="${s.diagnosis.ready ? "done" : "current"}"><i>${s.diagnosis.ready ? "✓" : ""}</i><div><b>Uppgifter och förutsättningar</b><p>${s.diagnosis.ready ? "Nödvändiga uppgifter är angivna." : `${s.diagnosis.missing.length + s.diagnosis.uncertain.length} uppgifter behöver anges eller bekräftas.`}</p></div></li><li class="${s.status === "completed" ? "done" : s.submitted ? "current" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Parallell handläggning i piloten</b><p>${s.submitted ? `${done} av ${s.tasks.length} uppgifter har fått en bedömning.` : "Rätt fråga förbereds för varje berörd aktör."}</p><div class="task-chips">${s.tasks.map((t) => `<span class="badge ${t.status}">${escape(scenario.authorities[t.authority].name)} ${t.status === "accepted" ? "✓" : t.status === "rejected" ? "×" : ""}</span>`).join("")}</div></div></li><li class="${s.status === "completed" ? "done" : ""}"><i>${s.status === "completed" ? "✓" : ""}</i><div><b>Samlat besked</b><p>${s.status === "completed" ? "Bedömningarna är avslutade. Se respektive aktörs utfall." : "Du ser varje bedömning och komplettering här."}</p></div></li></ol><div class="integration-notice"><b>Myndighetsanslutningar väntar</b><span>Strukturerade underlag finns i ÖPPNA. Inget har skickats till externa myndigheter.</span></div>`;
 }
 function highlight(o) {
   return escape(JSON.stringify(o, null, 2)).replace(
@@ -379,7 +399,7 @@ function renderSystem() {
   }
   const s = caseState;
   $("#system-content").innerHTML =
-    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>restaurant.trelleborg</span></div><div><strong>facts <em>${Object.keys(s.facts).length}</em></strong>${Object.entries(
+    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>${escape(s.scenarioId)}</span></div><div><strong>facts <em>${Object.keys(s.facts).length}</em></strong>${Object.entries(
       s.facts,
     )
       .map(
@@ -393,14 +413,15 @@ function renderSystem() {
 function workCard(packet) {
   if (!packet)
     return '<div class="empty-state">Ingen handläggaruppgift är vald.</div>';
+  const spec = scenarioFor(packet.scenarioId, packet.scenarioVersion);
   const enabled =
     packet.status === "active" && caseState?.diagnosis?.ready !== false;
-  return `<article class="work-card"><div class="work-top"><span>${escape(scenario.authorities[packet.authority].organisation)}</span><span class="badge ${packet.status}">${labels[packet.status]}</span></div><div class="work-inner"><h3>${escape(packet.title)}</h3><p class="judgement">${escape(packet.question)}</p><p class="packet-size">Endast relevant underlag · ${Object.keys(packet.facts).length} uppgifter · v${packet.taskRevision}</p><table><caption class="sr-only">Underlag för handläggarens fråga</caption><tbody>${Object.entries(
+  return `<article class="work-card"><div class="work-top"><span>${escape(spec.authorities[packet.authority].organisation)}</span><span class="badge ${packet.status}">${labels[packet.status]}</span></div><div class="work-inner"><h3>${escape(packet.title)}</h3><p class="judgement">${escape(packet.question)}</p><p class="packet-size">Endast relevant underlag · ${Object.keys(packet.facts).length} uppgifter · v${packet.taskRevision}</p><table><caption class="sr-only">Underlag för handläggarens fråga</caption><tbody>${Object.entries(
     packet.facts,
   )
     .map(
       ([k, f]) =>
-        `<tr><th scope="row">${scenario.fields[k].label}</th><td>${escape(value(k, f.value))}</td></tr>`,
+        `<tr><th scope="row">${spec.fields[k].label}</th><td>${escape(value(k, f.value, spec))}</td></tr>`,
     )
     .join(
       "",
@@ -413,7 +434,7 @@ function renderAuthority() {
   }
   if (!caseState?.tasks.length) {
     $("#authority").innerHTML =
-      '<div class="empty-state"><b>Handläggarfrågorna förbereds här.</b><p>Beskriv en restaurang så visar regelmotorn vilka aktörer som kan behövas.</p></div>';
+      '<div class="empty-state"><b>Handläggarfrågorna förbereds här.</b><p>Välj ett mål så visar regelmotorn vilka frågor och aktörer som kan behövas.</p></div>';
     return;
   }
   const authorities = [...new Set(caseState.tasks.map((t) => t.authority))];
@@ -427,7 +448,7 @@ function renderStandalone() {
     target.innerHTML = `<p class="intro">Logga in med din personliga handläggarnyckel. I pilotläget kan du också öppna ditt eget testärende från företagarvyn först.</p><form id="staff-login"><label for="staff-key">Handläggarnyckel</label><input id="staff-key" name="key" class="field" type="password" autocomplete="off" required minlength="32"><button class="primary">Logga in</button></form>`;
     return;
   }
-  target.innerHTML = `<p class="intro">${escape(scenario.authorities[selectedAuthority]?.name)} · ${packets.length} uppgifter</p><label for="task-select" class="note-label">Välj uppgift</label><select id="task-select" class="field">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)} · ${p.caseId.slice(0, 8)}</option>`).join("")}</select>${workCard(packets.find((p) => p.taskId === selectedTask) || packets[0])}`;
+  target.innerHTML = `<p class="intro">${escape(AUTHORITIES[selectedAuthority]?.name)} · ${packets.length} uppgifter</p><label for="task-select" class="note-label">Välj uppgift</label><select id="task-select" class="field">${packets.map((p) => `<option value="${p.taskId}" ${p.taskId === selectedTask ? "selected" : ""}>${escape(p.title)} · ${p.caseId.slice(0, 8)}</option>`).join("")}</select>${workCard(packets.find((p) => p.taskId === selectedTask) || packets[0])}`;
 }
 function render() {
   const focused = document.activeElement?.id;
@@ -514,6 +535,8 @@ $("#intent").addEventListener("input", parseInput);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.selectScenario)
+    run(() => selectScenario(b.dataset.selectScenario));
   if (b.dataset.boolKey)
     explicitAnswer(b.dataset.boolKey, b.dataset.bool === "true");
   if (b.dataset.unsure) {
@@ -613,30 +636,16 @@ document.addEventListener("change", (e) => {
   }
 });
 $("#example").addEventListener("click", () => {
-  $("#intent").value = EXAMPLE;
+  $("#intent").value = scenario.example;
   parseInput();
 });
 $("#complete-example").addEventListener("click", () => {
   if (!config.pilotEnabled) return;
   if (!parsed.goal) {
-    $("#intent").value = EXAMPLE;
+    $("#intent").value = scenario.example;
     parseInput();
   }
-  const sample = {
-    tax_registration_needed: true,
-    address: "Storgatan 12, Trelleborg",
-    municipality: "Trelleborg",
-    capacity: 40,
-    alcohol: true,
-    current_use: "Restaurang",
-    building_changes: false,
-    outdoor: true,
-    public_land: true,
-    outdoor_area: 30,
-    food_preparation: "Tillagning på plats",
-    portions: 120,
-    opening_date: "2027-05-01",
-  };
+  const sample = scenario.demo;
   for (const [k, v] of Object.entries(sample))
     if (!localFacts[k] || localFacts[k].status === "uncertain")
       localFacts[k] = {
@@ -656,7 +665,10 @@ $("#new-case").addEventListener("click", () =>
   run(async () => {
     if (pendingSave) await saveFacts();
     await saveChain;
-    const r = await api("/api/cases", { method: "POST", body: {} });
+    const r = await api("/api/cases", {
+      method: "POST",
+      body: { scenarioId: scenario.id },
+    });
     drafts.clear();
     editKey = null;
     await loadCase(r.case.id);
@@ -680,18 +692,108 @@ document.querySelector('[role="tablist"]').addEventListener("keydown", (e) => {
     $("#" + (tab === "json" ? "json-tab" : "events-tab")).focus();
   }
 });
+
+function renderScenarioHeader() {
+  $("#scenario-title").textContent = scenario.title;
+  $("#scenario-version").textContent =
+    scenario.reviewLevel === "detailed"
+      ? `Detaljerad pilot · v${scenario.version}`
+      : `Förberedande pilot · v${scenario.version}`;
+  $("#intent").placeholder = scenario.example;
+  $("#example").textContent =
+    scenario.id === "restaurant.trelleborg"
+      ? "Prova restaurangexemplet"
+      : "Prova ett exempel";
+  $("#scenario-scope").textContent = scenario.scope;
+  $("#source-version").textContent =
+    `${scenario.title} · v${scenario.version} · källkontroll 8 oktober 2026. Automatiken föreslår frågor; rättsliga bedömningar kräver ansvarig handläggare.`;
+  $("#source-links").innerHTML = Object.values(scenario.sources)
+    .map(
+      (s) =>
+        `<a href="${escape(s.url)}" target="_blank" rel="noreferrer">${escape(s.title)}</a>`,
+    )
+    .join("");
+}
+function renderCatalog() {
+  const query = $("#scenario-search")
+    .value.toLocaleLowerCase("sv-SE")
+    .normalize("NFC")
+    .trim();
+  const family = $("#scenario-family").value;
+  const found = SCENARIOS.filter(
+    (s) =>
+      (!family || s.family === family) &&
+      (!query ||
+        [s.title, s.family, ...s.aliases]
+          .join(" ")
+          .toLocaleLowerCase("sv-SE")
+          .includes(query)),
+  );
+  $("#catalog-count").textContent =
+    `${found.length} av ${SCENARIOS.length} ärendetyper`;
+  $("#scenario-results").innerHTML = found.length
+    ? found
+        .map(
+          (s) =>
+            `<button class="scenario-card ${s.id === scenario.id ? "current-scenario" : ""}" data-select-scenario="${s.id}"><span>${escape(s.family)}</span><strong>${escape(s.title)}</strong><small>${s.reviewLevel === "detailed" ? "Detaljerat pilotflöde" : "Förberedande frågor och mänsklig bedömning"}</small></button>`,
+        )
+        .join("")
+    : '<p class="empty-state">Ingen ärendetyp matchar. Prova ett annat ord. Okända mål automatiseras inte.</p>';
+}
+async function selectScenario(id) {
+  if (!registry[id]) return;
+  const text = $("#intent").value;
+  if (pendingSave) await saveFacts();
+  await saveChain;
+  if (caseState.submitted) {
+    const r = await api("/api/cases", {
+      method: "POST",
+      body: { scenarioId: id },
+    });
+    await loadCase(r.case.id);
+  } else {
+    await command({ type: "select_scenario", scenarioId: id });
+    await loadCase(caseState.id);
+  }
+  drafts.clear();
+  editKey = null;
+  scenarioSelected = true;
+  goalConfirmed = true;
+  $("#intent").value = text;
+  storeRaw(text);
+  // If the old text clearly describes another goal, start from the new example.
+  const check = parseIntake(text, scenario, { goalSelected: true });
+  if (check.suggestedScenario || check.unsupported.length)
+    $("#intent").value = scenario.example;
+  previousParsed = { facts: {}, goal: null, uncertain: [] };
+  parseInput();
+  $("#catalog-dialog").close();
+  await saveFacts();
+  $("#intent").focus();
+  announce(`${scenario.title} är valt.`);
+}
+$("#open-catalog").addEventListener("click", () => {
+  renderCatalog();
+  $("#catalog-dialog").showModal();
+  $("#scenario-search").focus();
+});
+$("#close-catalog").addEventListener("click", () =>
+  $("#catalog-dialog").close(),
+);
+$("#scenario-search").addEventListener("input", renderCatalog);
+$("#scenario-family").innerHTML =
+  '<option value="">Alla områden</option>' +
+  [...new Set(SCENARIOS.map((s) => s.family))]
+    .map((x) => `<option>${escape(x)}</option>`)
+    .join("");
+$("#scenario-family").addEventListener("change", renderCatalog);
+
 async function boot() {
   config = await api("/api/config");
   $("#mode-label").textContent = config.pilotEnabled
     ? "PILOT · TESTÄRENDEN"
     : "HANDLÄGGNING";
   $("#complete-example").hidden = !config.pilotEnabled;
-  $("#source-links").innerHTML = Object.values(scenario.sources)
-    .map(
-      (s) =>
-        `<a href="${s.url}" target="_blank" rel="noreferrer">${escape(s.title)}</a>`,
-    )
-    .join("");
   if (standalone) {
     $("#citizen-workspace").hidden = true;
     $(".servicebar").hidden = true;

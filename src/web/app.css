@@ -1644,3 +1644,82 @@ dialog .muted {
     scroll-behavior: auto !important;
   }
 }
+/* Searchable scenario catalogue keeps the three perspectives on one workspace. */
+#catalog-dialog {
+  width: min(860px, calc(100vw - 32px));
+  max-width: 860px;
+  max-height: calc(100dvh - 32px);
+}
+.catalog-filters {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+.catalog-filters label {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+.catalog-filters .field {
+  margin: 8px 0 0;
+  width: 100%;
+}
+#catalog-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+#scenario-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.scenario-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 7px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--ink);
+  min-width: 0;
+}
+.scenario-card:hover,
+.current-scenario {
+  border-color: #1c6552;
+  background: #f0f6f3;
+}
+.scenario-card span {
+  color: #527367;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.scenario-card strong {
+  font-size: 16px;
+  line-height: 1.35;
+}
+.scenario-card small {
+  font-size: 11px;
+  color: #727b76;
+  line-height: 1.4;
+}
+.servicebar strong,
+#scenario-version {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .catalog-filters,
+  #scenario-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #catalog-dialog {
+    padding: 26px 18px;
+  }
+}
+
+.servicebar > div:first-child {
+  min-width: 0;
+  flex-wrap: wrap;
+}

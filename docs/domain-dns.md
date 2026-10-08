@@ -10,4 +10,4 @@ Domänen är registrerad för ÖPPNA-piloten hos värdtjänsten och väntar på 
 
 DNS-verktyg som kräver hela namnet ska ha `.tensetti.io` efter respektive namn. En CNAME kan inte ligga parallellt med en befintlig A/AAAA-post på samma namn. Kontrollera eventuell befintlig användning innan den ändras.
 
-När verifiering och TLS är klara kan domänen börja fungera. Kopplingen ändrar inte pilotens åtkomstinställningar: den är fortfarande privat för ägaren. Att publicera den för externa pilotdeltagare är ett separat åtkomstbeslut.
+Domänen och TLS är verifierade. Piloten är publicerad på https://open.tensetti.io och användaren har valt offentlig åtkomst. Varje medborgarsession kommer bara åt sina egna testärenden; extern myndighetsanslutning saknas.

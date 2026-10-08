@@ -1,5 +1,6 @@
 import { RESTAURANT } from "./restaurant.mjs";
-export const registry = Object.freeze({ [RESTAURANT.id]: RESTAURANT });
+import { registry, scenarioVersions } from "./catalog.mjs";
+export { registry };
 export const clone = (value) => structuredClone(value);
 export class DomainError extends Error {
   constructor(code, message, status = 422) {
@@ -9,8 +10,15 @@ export class DomainError extends Error {
   }
 }
 export function scenarioFor(id, version) {
-  const s = registry[id];
-  if (!s || (version && s.version !== version))
+  const s =
+    typeof id === "string" && Object.hasOwn(registry, id)
+      ? version
+        ? Object.hasOwn(scenarioVersions[id], version)
+          ? scenarioVersions[id][version]
+          : null
+        : registry[id]
+      : null;
+  if (!s)
     throw new DomainError(
       "SCENARIO_UNAVAILABLE",
       "Scenarioversionen kan inte hanteras.",
@@ -232,13 +240,20 @@ export function deriveTasks(state, emit) {
           ? "completed"
           : "processing";
 }
-export function newCase(id, ownerId, at, mode = "pilot") {
+export function newCase(
+  id,
+  ownerId,
+  at,
+  mode = "pilot",
+  scenarioId = RESTAURANT.id,
+) {
+  const selected = scenarioFor(scenarioId);
   const s = {
     id,
     ownerId,
     mode,
-    scenarioId: RESTAURANT.id,
-    scenarioVersion: RESTAURANT.version,
+    scenarioId: selected.id,
+    scenarioVersion: selected.version,
     revision: 0,
     facts: {},
     tasks: [],
@@ -271,7 +286,46 @@ export function applyCommand(previous, command, actor, at) {
     throw new DomainError("INVALID_COMMAND", "Åtgärden saknas.");
   if (actor.role === "citizen" && state.ownerId !== actor.id)
     throw new DomainError("FORBIDDEN", "Du saknar åtkomst till ärendet.", 403);
-  if (command.type === "replace_facts") {
+  if (command.type === "select_scenario") {
+    if (actor.role !== "citizen")
+      throw new DomainError(
+        "FORBIDDEN",
+        "Endast ärendets ägare får välja ärendetyp.",
+        403,
+      );
+    if (state.submitted)
+      throw new DomainError(
+        "SCENARIO_LOCKED",
+        "Ett startat ärende behåller sin ärendetyp. Skapa ett nytt ärende för ett nytt mål.",
+        409,
+      );
+    const selected = scenarioFor(command.scenarioId);
+    if (
+      selected.id !== state.scenarioId ||
+      selected.version !== state.scenarioVersion
+    ) {
+      for (const task of state.tasks)
+        emit("task.withdrawn", {
+          taskId: task.id,
+          taskKey: task.key,
+          authority: task.authority,
+          reason: "Ärendetypen har ändrats av användaren.",
+        });
+      for (const [key, fact] of Object.entries(state.facts))
+        emit("fact.removed", { key, previous: fact });
+      emit("scenario.selected", {
+        from: { id: state.scenarioId, version: state.scenarioVersion },
+        to: { id: selected.id, version: selected.version },
+      });
+      state.scenarioId = selected.id;
+      state.scenarioVersion = selected.version;
+      state.facts = {};
+      state.tasks = [];
+      state.inputStatus = "uncertain";
+      state.inputReasons = [];
+      deriveTasks(state, emit);
+    }
+  } else if (command.type === "replace_facts") {
     if (actor.role !== "citizen")
       throw new DomainError(
         "FORBIDDEN",
@@ -470,6 +524,8 @@ export function packetFor(state, task) {
     caseRevision: state.revision,
     scenarioId: s.id,
     scenarioVersion: s.version,
+    scenarioTitle: s.title,
+    reviewLevel: s.reviewLevel || "detailed",
     mode: state.mode,
     taskId: task.id,
     taskKey: task.key,

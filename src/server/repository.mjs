@@ -14,7 +14,7 @@ export async function readCase(db, id) {
     throw new DomainError("NOT_FOUND", "Ärendet kunde inte hittas.", 404);
   return JSON.parse(row.state_json);
 }
-export async function createCase(db, ownerId, mode) {
+export async function createCase(db, ownerId, mode, scenarioId) {
   const count = await db
     .prepare("SELECT COUNT(*) AS count FROM cases WHERE owner_id = ?")
     .bind(ownerId)
@@ -25,7 +25,7 @@ export async function createCase(db, ownerId, mode) {
       "Du har nått pilotens gräns på 25 ärenden.",
       429,
     );
-  const state = newCase(crypto.randomUUID(), ownerId, now(), mode);
+  const state = newCase(crypto.randomUUID(), ownerId, now(), mode, scenarioId);
   const e = {
     type: "case.created",
     data: {

@@ -1,4 +1,4 @@
-name: Verify restaurant pilot
+name: Verify ÖPPNA scenarios
 on:
   push:
   pull_request:

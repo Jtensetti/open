@@ -29,3 +29,15 @@ En riktig adapter behöver en avtalad mottagare, autentisering, schema, idempote
 ## Före mottagning av riktiga ärenden
 
 Fastställ ansvarig tjänsteoperatör och informationsägare; godkänn identitets-/företrädarskapsflöde, myndighetsbehörighet, personuppgiftsbehandling och gallring. Verifiera scenariot med verksamhetsansvariga och anslut minst en verklig mottagare med kvittens. Genomför säkerhets- och tillgänglighetsgranskning, återläsningsprov och driftsättning med övervakning. `DEPLOYMENT_MODE=production` öppnar inte intaget: det är medvetet stängt tills detta är implementerat.
+
+## Katalog och lokal tolkning, version 0.3.0
+
+100 scenarier återanvänder samma motor, API och databas. `scenarioVersions[id][version]` laddar det kontrakt som varje ärende är låst till. Restaurang 1.0.0 finns kvar. En ny version ska läggas till i versionsregistret utan att den gamla tas bort. Ingen automatisk migrering görs.
+
+En medborgare får uttryckligen byta typ på ett utkast. `scenario.selected` journalför bytet; gamla fakta och uppgifter återkallas och nästa schema används. Startade ärenden får inte byta scenario: frontend skapar ett separat ärende för det nya målet. Servern upprätthåller båda gränserna.
+
+Lokal intentdetektion föreslår katalogval. Nya flöden har egna följdfrågor, faktatyper, regler och exempel. Preparatory-flöden förbereder en mänsklig fråga; de fastställer varken tillståndskrav, bidragsrätt eller myndighetsbeslut. Funktionella aktörsnamn i piloten betyder inte att berörda enheter har anslutit eller godkänt flödena.
+
+Adressutdrag hittar fristående svenska gatuadresser, flerledade gatunamn, portbokstäver och postnummer. Källspann följer originaltexten. Två adresser, nummerintervall eller osäkra uttryck kräver bekräftelse. Ingen registervalidering eller geokodning görs. Bekräftad kommun och tolkad adress är separata fakta.
+
+Negation hanteras per satsdel; motstridiga besked förblir uncertain. Datum valideras mot kalendern. Fuzzy-matchning föreslår bara ett unikt mål och behöver bekräftas. För många mål eller ett ej stött riskområde blir unsupported. En egen planeringsanteckning ingår aldrig i aktörspaket.
