@@ -4,7 +4,8 @@
  */
 const forms = new Map();
 function group(words) {
-  const list = words.split(" ");
+  const initial = words.split(" ");
+  const list = [...new Set(initial.flatMap((w) => forms.get(w) || [w]))];
   for (const word of list) forms.set(word, list);
 }
 function nouns(words, inflect) {
@@ -110,10 +111,147 @@ const verbs = [
   "registrera registrerar registrerade registrerat",
   "utöka utökar utökade utökat",
   "förlänga förlänger förlängde förlängt förläng",
+  "söka söker sökte sökt sök",
+  "ansöka ansöker ansökte ansökt ansök",
+  "behöva behöver behövde behövt",
+  "önska önskar önskade önskat",
+  "börja börjar började börjat",
+  "välja väljer valde valt välj",
+  "göra gör gjorde gjort",
+  "lägga lägger lade lagt lägg",
+  "sätta sätter satte satt sätt",
+  "ta tar tog tagit",
+  "sälja säljer sålde sålt sälj",
+  "tillverka tillverkar tillverkade tillverkat",
+  "producera producerar producerade producerat",
+  "avveckla avvecklar avvecklade avvecklat",
+  "bilda bildar bildade bildat",
+  "filma filmar filmade filmat",
+  "borra borrar borrade borrat",
+  "höja höjer höjde höjt",
+  "sänka sänker sänkte sänkt",
+  "schakta schaktar schaktade schaktat",
+  "inreda inreder inredde inrett",
+  "kompostera komposterar komposterade komposterat",
+  "renovera renoverar renoverade renoverat",
+  "utvidga utvidgar utvidgade utvidgat",
+  "förstora förstorar förstorade förstorat",
+  "flytta flyttar flyttade flyttat",
+  "ändra ändrar ändrade ändrat",
 ];
-for (const words of verbs) group(words);
+for (const words of verbs) {
+  group(words);
+  const [base, present, past, perfect] = words.split(" ");
+  group(
+    [
+      base,
+      base + "s",
+      present.endsWith("r") ? present.slice(0, -1) + "s" : present + "s",
+      past + "s",
+      perfect + "s",
+    ].join(" "),
+  );
+}
+for (const words of [
+  "sätta ställa ställer ställde ställt",
+  "förskola förskolan förskolor förskolorna",
+  "grundskola grundskolan grundskolor grundskolorna",
+  "skola skolan skolor skolorna",
+  "dagis dagiset dagisen",
+  "plats platsen platser platserna",
+  "förskoleplats förskoleplatsen förskoleplatser förskoleplatserna",
+  "dagisplats dagisplatsen dagisplatser dagisplatserna",
+  "skolplats skolplatsen skolplatser skolplatserna",
+  "förskoleklass förskoleklassen förskoleklasser förskoleklasserna",
+  "pensionat pensionatet pensionaten",
+  "system systemet systemen",
+  "kö kön köer köerna",
+  "mätare mätaren mätare mätarna",
+  "företag företaget företagen",
+  "förråd förrådet förråden",
+  "bostadshus bostadshuset bostadshusen",
+  "villa villan villor villorna",
+  "krog krogen krogar krogarna",
+  "matställe matstället matställen matställena",
+  "fik fiket fiken",
+  "affär affären affärer affärerna",
+  "konditori konditoriet konditorier konditorierna",
+  "solpanel solpanelen solpaneler solpanelerna",
+  "kamin kaminen kaminer kaminerna",
+  "vedspis vedspisen vedspisar vedspisarna",
+  "terrass terrassen terrasser terrasserna",
+  "trädäck trädäcket trädäcken",
+  "komvux komvuxet",
+  "stöd stödet stödens",
+  "barn barnen barnet",
+  "yrkesvux yrkesvuxen",
+  "vuxna vuxen vuxne",
+  "bärande bärande",
+  "grundläggande grundläggande",
+  "utebliven uteblivet uteblivna",
+  "offentlig offentligt offentliga",
+  "trasig trasigt trasiga",
+  "bred brett breda",
+  "tung tungt tunga",
+  "enskild enskilt enskilda",
+  "gammal gammalt gamla",
+])
+  group(words);
+
+// Inflect only known vocabulary words. Never strip an arbitrary user's word
+// until it resembles a service (e.g. balkongdörr is not a balcony application).
+export function registerNoun(word) {
+  if (forms.has(word) || word.length < 4) return;
+  // Compound nouns inherit inflections of a known head (företagsavfall,
+  // ventilationssystem, förskolekö), including irregular Swedish paradigms.
+  const head = [...forms.keys()]
+    .filter((w) => w.length >= 2 && word.length > w.length && word.endsWith(w))
+    .sort((a, b) => b.length - a.length)[0];
+  if (head) {
+    group(
+      forms
+        .get(head)
+        .map((w) => word.slice(0, -head.length) + w)
+        .join(" "),
+    );
+    return;
+  }
+  let endings = [];
+  if (word.endsWith("a"))
+    endings = [
+      word + "n",
+      word.slice(0, -1) + "or",
+      word.slice(0, -1) + "orna",
+    ];
+  else if (/(?:ning|pump|mur|vagn|väg|skylt|kiosk|spis|kö)$/.test(word))
+    endings = [word + "en", word + "ar", word + "arna"];
+  else if (
+    /(?:hus|däck|stånd|stöd|verk|val|kärl|byte|bygge|ärende)$/.test(word)
+  )
+    endings = [
+      word + (word.endsWith("e") ? "t" : "et"),
+      word + "n",
+      word + "en",
+    ];
+  else endings = [word + "en", word + "er", word + "erna"];
+  group([word, ...endings].join(" "));
+}
+export const pastActions = new Set(
+  verbs.flatMap((v) => v.split(" ").slice(2, 4)).flatMap((w) => [w, w + "s"]),
+);
+
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-export const wordForms = (word) => forms.get(word) || [word];
+export const wordForms = (word) => {
+  const list = forms.get(word) || [word];
+  return [
+    ...new Set(
+      list.flatMap((w) => [
+        w,
+        ...(w.length > 3 && !w.endsWith("s") ? [w + "s"] : []),
+      ]),
+    ),
+  ];
+};
 const wordPattern = (word) =>
   "(?:" +
   wordForms(word)

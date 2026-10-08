@@ -3,7 +3,7 @@ import { SCENARIOS, NATIONAL_SCENARIOS } from "../src/domain/catalog.mjs";
 import { parseIntake } from "../src/domain/intake-parser.mjs";
 import { validateValue, diagnose } from "../src/domain/core.mjs";
 assert.equal(SCENARIOS.length, 100);
-assert.equal(NATIONAL_SCENARIOS.length, 100);
+assert.equal(NATIONAL_SCENARIOS.length, 102);
 const scenarioIds = new Set();
 let count = 0;
 for (const s of [...SCENARIOS, ...NATIONAL_SCENARIOS]) {

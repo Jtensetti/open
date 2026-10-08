@@ -98,7 +98,11 @@ function inputStatus() {
       : "supported";
 }
 function hasGoal() {
-  return !!parsed.goal && !parsed.unsupported.length;
+  return (
+    !!parsed.goal &&
+    !parsed.unsupported.length &&
+    parsed.goals?.[0]?.polarity !== "negative"
+  );
 }
 async function loadEvents() {
   const data = await api(`/api/cases/${caseState.id}/events`);
@@ -233,6 +237,11 @@ function questionMarkup() {
   if (!$("#intent").value.trim() && !hasGoal()) return "";
   const diagnosis = diagnose(scenario, localFacts),
     scope = inputStatus();
+  if (parsed.goals?.length > 1) {
+    return `<div class="question-box uncertain"><h3>${parsed.goalRelation === "alternative" ? "Vilket gäller?" : "Flera ärenden"}</h3><ul>${parsed.goals.map((g) => `<li>${escape(registry[g.id].title)}${g.fuzzy ? " (osäker tolkning)" : ""}</li>`).join("")}</ul><p>Beskriv ett ärende i taget för att komplettera uppgifterna.</p></div>`;
+  }
+  if (parsed.goals?.[0]?.polarity === "negative")
+    return `<div class="question-box"><h3>Vad vill du göra i stället?</h3></div>`;
   if (scope === "unsupported") {
     const message = parsed.unsupported.some((s) =>
       s.includes("flera ärendemål"),
@@ -245,8 +254,8 @@ function questionMarkup() {
   }
   if (!parsed.goal)
     return `<div class="question-box"><h3>Vad vill du göra?</h3></div>`;
-  if (scope === "uncertain" && !goalConfirmed)
-    return `<div class="question-box uncertain"><div class="question-label">Har vi förstått rätt?</div><h3>Vill du ${escape(scenario.title.toLowerCase())}?</h3><button class="primary" data-confirm-goal>Ja, det stämmer</button></div>`;
+  if (scope === "uncertain" && !goalConfirmed && !editKey)
+    return `<div class="question-box uncertain"><div class="question-label">Har vi förstått rätt?</div><h3>${parsed.goals?.[0]?.tense === "past" ? "Gäller ärendet något som redan är gjort?" : `Vill du ${escape(scenario.title.toLowerCase())}?`}</h3><button class="primary" data-confirm-goal>Ja, det stämmer</button></div>`;
   const q = editKey
     ? { key: editKey, ...scenario.fields[editKey], kind: "edit" }
     : diagnosis.questions[0];
@@ -333,11 +342,37 @@ function renderSystem() {
     ? diagnose(scenario, localFacts)
     : { missing: [], uncertain: [] };
   const goal = hasGoal() ? scenario.id : null;
+  const visibleFacts = hasGoal() ? localFacts : {};
   const data = {
     case_id: caseState.id,
     scenario: goal,
     input_status: inputStatus(),
-    facts: localFacts,
+    ...(parsed.goals?.length
+      ? {
+          identified_goals: parsed.goals.map(
+            ({
+              id,
+              source,
+              start,
+              end,
+              polarity,
+              tense,
+              modality,
+              uncertain,
+            }) => ({
+              scenario: id,
+              source,
+              sourceSpan: { start, end },
+              polarity,
+              tense,
+              modality,
+              uncertain,
+            }),
+          ),
+          goal_relation: parsed.goalRelation,
+        }
+      : {}),
+    facts: visibleFacts,
     missing: d.missing,
     uncertain: [
       ...(inputStatus() === "uncertain" && $("#intent").value.trim()
@@ -347,8 +382,8 @@ function renderSystem() {
     ],
   };
   $("#system-content").innerHTML =
-    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>${escape(goal || "—")}</span></div><div><strong>facts <em>${Object.keys(localFacts).length}</em></strong>${Object.entries(
-      localFacts,
+    `<div class="graph-code"><div class="tree"><b>◉ case</b><div><strong>goal</strong><span>${escape(goal || "—")}</span></div><div><strong>facts <em>${Object.keys(visibleFacts).length}</em></strong>${Object.entries(
+      visibleFacts,
     )
       .map(
         ([k, f]) =>

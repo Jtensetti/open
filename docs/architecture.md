@@ -44,6 +44,6 @@ Negation hanteras per satsdel; motstridiga besked förblir uncertain. Datum vali
 
 ## Nationella mallar och produktionsgrind
 
-Nya ärenden använder 100 nationella avtal på 1.0.0. SCB:s 290 kommunnamn/koder finns offline. Postort och kommun är separata; osäkert kommunval skapar inga uppgifter. Aktörsroller binds till kommunkod och ändrat kommunval återkallar gamla underlag och bedömningar. Alla äldre Trelleborgavtal finns kvar oförändrade. Ingen lokal rättslig profil påstås vara verifierad.
+Nya ärenden använder 102 nationella avtal på 1.0.0. SCB:s 290 kommunnamn/koder finns offline. Postort och kommun är separata; osäkert kommunval skapar inga uppgifter. Aktörsroller binds till kommunkod och ändrat kommunval återkallar gamla underlag och bedömningar. Alla äldre Trelleborgavtal finns kvar oförändrade. Ingen lokal rättslig profil påstås vara verifierad.
 
 OIDC med PKCE, signerad tokenvalidering, browserbundet engångsstate och administrerad handläggarroll är implementerat. Anonyma sessioner och pilotnycklar nekas i produktionsläge. Verklig IdP, lokala processprofiler och mottagaradaptrar behöver konfigureras och granskas före skarpt intag. Se [produktionskontrakt](production.md) för konfiguration, återkallad behörighet, export och begränsad städning av utgångna sessionsuppgifter.

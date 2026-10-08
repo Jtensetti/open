@@ -1,6 +1,6 @@
 # ÖPPNA
 
-100 kommunoberoende ärendetyper: **fritext → strukturerade uppgifter → generell handläggarvy**.
+102 kommunoberoende ärendetyper: **fritext → strukturerade uppgifter → generell handläggarvy**.
 
 Fritext, ärendegraf och handläggarens uppgiftstabell visas samtidigt och uppdateras från samma tolkning. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
 
@@ -29,6 +29,12 @@ Handläggarvyn på startsidan är en skrivskyddad projektion av det egna ärende
 
 `/handlaggning` visar skrivskyddade uppgifter som servern ger den inloggade handläggaren behörighet till. Utkast exponeras inte för vanliga handläggare. Domänens stöd för aktörsavgränsning, komplettering och bedömning finns kvar i API:t och dess tester.
 
+## Svensk språkförståelse
+
+Parsern använder en gemensam svensk ordlista, böjningsmönster och grammatiska signaler över alla befintliga typer. Den känner bland annat igen ”bygga ut altanen”, ”söka dagisplats”, ”barnet ska börja i nollan” och ”trettiofem kvadratmeter”. De enda nytillkomna typerna är förskole- och skolplacering.
+
+Negation, dåtid, hypotetiska frågor, alternativ och rättelser redovisas separat från ärendetypen. Avgränsade stavningsförslag kräver bekräftelse. Flera mål visas som `identified_goals` med källtext och språkmarkörer i ärendets JSON. De skapar ännu inte flera beständiga ärenden; uppgifter från olika mål blandas inte. Se [språkregler och begränsningar](docs/language.md).
+
 ## Verifiera
 
 ```sh
@@ -40,14 +46,14 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 100 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, automatiskt ärendetypbyte, långsamma sparningar, omladdning, lokal fritext och osäkra tolkningar. GitHub Actions kör samma kontroller.
+Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 102 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, automatiskt ärendetypbyte, långsamma sparningar, omladdning, lokal fritext och osäkra tolkningar. GitHub Actions kör samma kontroller.
 
 ## Kodens delar
 
 | Del | Ansvar |
 | --- | --- |
 | `src/domain/restaurant.mjs` | Versionsatt scenario, fält, villkor, myndigheter och kontrollerade källor |
-| `src/domain/catalog-data.mjs`, `catalog.mjs` | 100 versionerade scenarier i tio områden med egna frågor och minimala datapaket |
+| `src/domain/catalog-data.mjs`, `catalog.mjs` | 102 nationella scenarier och 100 bevarade äldre avtal i tio områden med egna frågor och minimala datapaket |
 | `src/domain/intake-parser.mjs`, `extractors.mjs`, `parser.mjs` | Lokal deterministisk parser: adresser, datum, synonymer, felstavning, negation och osäkerhet |
 | `src/domain/core.mjs` | Validering, frågeprioritering, regelmotor och tillståndsövergångar |
 | `src/domain/municipalities.mjs`, `national-scenarios.mjs`, `authority-routing.mjs` | Nationell tolkning och kommunavgränsade aktörsroller |

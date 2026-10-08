@@ -1,6 +1,7 @@
 import { RESTAURANT } from "./restaurant.mjs";
 import { DEFINITIONS } from "./catalog-data.mjs";
 import { nationalScenarios } from "./national-scenarios.mjs";
+import { EDUCATION_SCENARIOS } from "./education-scenarios.mjs";
 export const AUTHORITIES = {
   ...RESTAURANT.authorities,
   "trelleborg.business": {
@@ -750,7 +751,10 @@ export const SCENARIOS = Object.freeze([
     rows.map((row) => createScenario(family, row)),
   ),
 ]);
-export const NATIONAL_SCENARIOS = Object.freeze(nationalScenarios(SCENARIOS));
+export const NATIONAL_SCENARIOS = Object.freeze([
+  ...nationalScenarios(SCENARIOS),
+  ...EDUCATION_SCENARIOS,
+]);
 export const DEFAULT_SCENARIO_ID = "restaurant.se";
 export const registry = Object.freeze(
   Object.fromEntries(
