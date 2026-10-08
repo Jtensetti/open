@@ -28,6 +28,7 @@ const standalone = location.pathname === "/handlaggning";
 let config,
   caseState,
   staffCursor = null,
+  staffAuthenticated = false,
   localFacts = {},
   parsed = parseIntake("", scenario),
   previousParsed = parsed,
@@ -468,6 +469,11 @@ function renderAuthority() {
 function renderStandalone() {
   const target = $("#staff-standalone");
   if (!packets.length) {
+    if (staffAuthenticated) {
+      target.innerHTML =
+        '<p class="intro">Du har inga tilldelade uppgifter just nu.</p><button class="secondary" id="staff-refresh">Uppdatera</button>';
+      return;
+    }
     if (!config.pilotEnabled) {
       target.innerHTML = config.identityProviders.staff
         ? '<p class="intro">Logga in med organisationens identitetsleverantör för att se dina tilldelade uppgifter.</p><button class="primary" data-identity-provider="staff">Logga in till handläggning</button>'
@@ -534,6 +540,8 @@ async function refreshStaff(extend = false) {
       ]
     : data.tasks;
   staffCursor = data.nextCursor;
+  staffAuthenticated = true;
+  $("#logout").hidden = false;
   selectedAuthority = data.authority;
   if (!packets.some((p) => p.taskId === selectedTask))
     selectedTask = packets[0]?.taskId;
@@ -581,6 +589,7 @@ $("#intent").addEventListener("input", parseInput);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.id === "staff-refresh") run(() => refreshStaff());
   if (b.id === "staff-more") run(() => refreshStaff(true));
   if (b.dataset.selectScenario)
     run(() => selectScenario(b.dataset.selectScenario));
