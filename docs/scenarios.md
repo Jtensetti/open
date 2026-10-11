@@ -1,12 +1,12 @@
-# 100 kommunoberoende ärendetyper
+# 102 kommunoberoende ärendetyper
 
-Version 0.4.0 innehåller 100 nationella förberedelseflöden i tio områden. Alla delar en motor för lokal tolkning, frågor, lagring, parallella uppgifter, komplettering och mänsklig bedömning. Varje mall har eget versionsatt schema och specifik sakfråga.
+Version 0.4.0 innehåller 102 nationella förberedelseflöden inom kommunal service. Alla delar en motor för lokal tolkning, frågor, lagring, parallella uppgifter, komplettering och mänsklig bedömning. Varje mall har eget versionsatt schema och specifik sakfråga.
 
 Nya flöden använder `*.se` på 1.0.0, `jurisdiction=SE` och separat ansvarig kommun från SCB:s 290 namn/koder. Postort används aldrig för att gissa kommun. Lokala aktörsroller avgränsas med kommunkod; lokala regler och mottagare är ännu inte verifierade. Gamla Trelleborgavtal på 1.0.0/0.1.0 bevaras för tidigare ärenden.
 
-**100 körbara förberedelseflöden är inte 100 godkända myndighetstjänster.** Källorna stödjer processområdet; ansvarig verksamhet behöver granska exakta regler och underlag. Inga externa myndighetssystem är anslutna. OIDC är implementerat men en verklig leverantör behöver konfigureras. Högriskfall som kärnkraft, vapen och akut vård stöds inte. Se [produktionskontrakt](production.md).
+**102 körbara förberedelseflöden är inte 102 godkända myndighetstjänster.** Källorna stödjer processområdet; ansvarig verksamhet behöver granska exakta regler och underlag. Inga externa myndighetssystem är anslutna. OIDC är implementerat men en verklig leverantör behöver konfigureras. Högriskfall som kärnkraft, vapen och akut vård stöds inte. Se [produktionskontrakt](production.md).
 
-Alla 100 nationella flöden och alla 100 tidigare avtal provas genom databas/API med komplettering, bedömning och verifierad eventkedja. Webbläsartester provar katalog, nationell parsing, kommunbyte samt tio representativa typer på dator och mobil.
+Alla 102 nationella flöden och alla 100 tidigare avtal provas genom databas/API med komplettering, bedömning och verifierad eventkedja. Webbläsartester provar katalog, nationell parsing, kommunbyte samt tio representativa typer på dator och mobil.
 
 ## Versionshantering
 
@@ -116,3 +116,5 @@ Gamla ärenden behåller scenarioId och scenarioVersion. Typbyte på utkast jour
 | 98 | Boka idrottsanläggning | Förening och kultur | Vilken aktivitet, lokaltyp och tider behövs? |
 | 99 | Förbereda fråga om föreningsbidrag | Förening och kultur | Vilken verksamhet eller aktivitet ska stödet avse? |
 | 100 | Förbereda fråga om kulturstöd | Förening och kultur | Beskriv kulturaktiviteten, målgruppen och användningen av stödet. |
+| 101 | Ansöka om förskoleplats | Barn och utbildning | Önskad start, förskola och barnets ålder. |
+| 102 | Ansöka om skolplats | Barn och utbildning | Önskad start, skola och årskurs/skolform. |

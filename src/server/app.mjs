@@ -23,6 +23,10 @@ import {
   requireStaffGrant,
 } from "./identity.mjs";
 import { readiness, maintenance } from "./operations.mjs";
+import {
+  containsPersonalNumberIn,
+  PILOT_DATA_MESSAGE,
+} from "../domain/pilot-data.mjs";
 import { pageRequest, nextCursor } from "./pagination.mjs";
 import {
   readCase,
@@ -160,8 +164,9 @@ async function handle(request, env, ctx, assets) {
     return new Response(request.method === "HEAD" ? null : asset.body, {
       headers: {
         "content-type": asset.type,
-        "cache-control":
-          file === "/index.html" ? "no-cache" : "public, max-age=300",
+        "cache-control": ["/index.html", "/app.js", "/app.css"].includes(file)
+          ? "no-cache"
+          : "public, max-age=300",
       },
     });
   }
@@ -174,7 +179,7 @@ async function handle(request, env, ctx, assets) {
   if (!["GET", "HEAD"].includes(request.method)) requireOrigin(request);
   if (path === "/api/config" && request.method === "GET")
     return json({
-      version: "0.4.0",
+      version: "0.5.1",
       mode: env.DEPLOYMENT_MODE || "closed",
       scenario: registry[DEFAULT_SCENARIO_ID],
       scenarios: catalogSummary(),
@@ -194,7 +199,7 @@ async function handle(request, env, ctx, assets) {
     await env.DB.prepare(
       "SELECT state_hash FROM auth_transactions LIMIT 1",
     ).first();
-    return json({ status: "ok", version: "0.4.0" });
+    return json({ status: "ok", version: "0.5.1" });
   }
   if (path === "/api/readiness" && request.method === "GET")
     return json(readiness(env), env.DEPLOYMENT_MODE === "pilot" ? 200 : 503);
@@ -355,6 +360,11 @@ async function handle(request, env, ctx, assets) {
           "Åtgärden hör inte till medborgarvyn.",
           403,
         );
+      if (
+        env.DEPLOYMENT_MODE === "pilot" &&
+        containsPersonalNumberIn(body.command)
+      )
+        throw new DomainError("PILOT_PERSONAL_NUMBER", PILOT_DATA_MESSAGE);
       const result = await commitCommand(
         env.DB,
         id,

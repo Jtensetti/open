@@ -4,7 +4,7 @@ Den publicerade tjänsten kör `DEPLOYMENT_MODE=pilot` med testärenden. 0.4.0 i
 
 ## Nationell tolkning och lokalt ansvar
 
-100 nationella mallar har `jurisdiction=SE` och ett separat kommunfaktum. SCB:s 290 kommunnamn och koder finns lokalt, kontrollerade 2026-10-08: https://www.scb.se/hitta-statistik/regional-statistik-och-kartor/regionala-indelningar/lan-och-kommuner/kommuner-i-bokstavsordning/
+102 nationella mallar har `jurisdiction=SE` och ett separat kommunfaktum. SCB:s 290 kommunnamn och koder finns lokalt, kontrollerade 2026-10-08: https://www.scb.se/hitta-statistik/regional-statistik-och-kartor/regionala-indelningar/lan-och-kommuner/kommuner-i-bokstavsordning/
 
 Parsern använder inga nätverksanrop. Postort, postnummer och adress avgör inte kommungränsen. `Storgatan 12, Malmö` ger en adress och en kommunfråga; `Storgatan 12 i Malmö` föreslår användarens uttryckliga kommunuppgift. Alternativ och fuzzy-matchning kräver bekräftelse. Tabelluppdatering är en granskad kodändring.
 
@@ -53,4 +53,4 @@ Behörighet kommer från denna lista, inte användarens JSON. Listan kontrollera
 
 Skarp mottagning kräver en konfigurerad och provad verklig identitetsleverantör, godkänd behörighets-/företrädarmodell, verksamhetsgranskade lokala processprofiler, avtalade mottagare med idempotens och kvittens, fastställd datalivscykel samt provad återställning, tillgänglighet och kapacitet. Dessa externa förutsättningar finns inte i denna deploy.
 
-Automatiska tester provar 290 kommunnamn, 100 nationella och 100 äldre avtal, kommunbyte och behörighetsisolering, negativa fall med signerade OIDC-tokens, samtidiga skrivningar, databas/API-loopar, byggd Worker/D1 och dator/mobil. Verkliga IdP- och mottagarkontrakt behöver dessutom provas i staging.
+Automatiska tester provar 290 kommunnamn, 102 nationella och 100 äldre avtal, kommunbyte och behörighetsisolering, negativa fall med signerade OIDC-tokens, samtidiga skrivningar, databas/API-loopar, byggd Worker/D1 och dator/mobil. Verkliga IdP- och mottagarkontrakt behöver dessutom provas i staging.

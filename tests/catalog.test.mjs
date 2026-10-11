@@ -146,7 +146,7 @@ test("catalog configuration and draft selection preserve versions and reject uns
   try {
     const { c, state } = await h.ready();
     const config = await c.request("/api/config");
-    assert.equal(config.data.scenarios.length, 100);
+    assert.equal(config.data.scenarios.length, 102);
     let r = await dispatch(c, state, {
       type: "select_scenario",
       scenarioId: "building.garage.trelleborg",

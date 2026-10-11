@@ -1,12 +1,12 @@
 # ÖPPNA
 
-100 kommunoberoende flöden: **lokal fritexttolkning → adaptiva frågor → beständigt ärende → avgränsade myndighetsuppgifter → mänsklig bedömning → återkoppling**.
+102 kommunoberoende ärendetyper: **fritext → strukturerade uppgifter → generell handläggarvy**.
 
-Alla tre vyerna utgår från samma versionshanterade ärendetillstånd. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
+Fritext, ärendegraf och handläggarens uppgiftstabell visas samtidigt och uppdateras från samma tolkning. Databasen är beständig; fritexten stannar i webbläsaren. Strukturerade uppgifter och korta källutdrag sparas på servern.
 
-**Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och rollbyte i demonstrationen fungerar bara med `DEPLOYMENT_MODE=pilot`.
+**Status: körbar pilot med testuppgifter.** Inga externa myndighetssystem är anslutna, och pilotbedömningar är inte myndighetsbeslut. Sätt inte in riktiga personuppgifter. Nyregistrering och API:ts pilotrollbyte fungerar bara med `DEPLOYMENT_MODE=pilot`.
 
-Version `0.4.0` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
+Version `0.5.1` använder SCB:s 290 kommunnamn och koder lokalt. Adress och ansvarig kommun är separata fakta. Nationella mallar på `1.0.0` förbereder avgränsade mänskliga frågor; lokala regler och mottagare behöver verifieras. Gamla Trelleborgärenden behåller sina tidigare avtal. Se [katalog](docs/scenarios.md) och [produktionskontrakt](docs/production.md).
 
 Publicerad pilot: https://open.tensetti.io
 
@@ -21,14 +21,19 @@ npm run dev
 
 Öppna http://localhost:8787. SQLite lagras i `.data/oppna.sqlite`. Starta om servern efter kodändringar. Databasmigrationerna tillämpas automatiskt **bara av utvecklingsservern**.
 
-1. Skriv ditt mål eller öppna ”Välj ärendetyp · 100”. Sök exempelvis butik, garage eller evenemang.
-2. Svara på frågorna. Knappen ”Fyll med testuppgifter” fyller ett komplett testfall.
-3. Bekräfta och starta pilotärendet.
-4. Välj en aktör, begär komplettering och svara i företagarvyn.
-5. Registrera en bedömning och se hur händelser, status och samma ärende uppdateras.
-6. Ändra ett relevant faktum: berörda bedömningar återställs; oberoende grenar behåller sina bedömningar.
+1. Beskriv vad du vill göra. Ett tydligt mål väljer rätt ärendetyp medan du skriver; osäkra formuleringar behöver bekräftas.
+2. Se uppgifterna i ärendegrafen och den generella handläggartabellen. Komplettera eller korrigera vid behov.
+3. Uppgifter sparas automatiskt. Fliken ”Händelser” visar den sparade händelsekedjan. Omladdning återställer ärendet och webbläsarens lokala fritext.
 
-`/handlaggning` är en separat arbetsyta. En pilotbehörighet gäller endast det egna testärendet och en aktör. En konfigurerad individuell handläggarnyckel ger endast den aktörens inskickade uppgifter. Utkast exponeras inte för vanliga handläggare.
+Handläggarvyn på startsidan är en skrivskyddad projektion av det egna ärendet; den skapar ingen handläggarbehörighet och skickar inget till myndigheter. Privat anteckning ingår inte i tabellen. Inga gransknings-, överlämnings- eller beslutsknappar visas.
+
+`/handlaggning` visar skrivskyddade uppgifter som servern ger den inloggade handläggaren behörighet till. Utkast exponeras inte för vanliga handläggare. Domänens stöd för aktörsavgränsning, komplettering och bedömning finns kvar i API:t och dess tester.
+
+## Svensk språkförståelse
+
+Parsern använder en gemensam svensk ordlista, böjningsmönster och grammatiska signaler över alla befintliga typer. Den känner bland annat igen ”bygga ut altanen”, ”söka dagisplats”, ”barnet ska börja i nollan” och ”trettiofem kvadratmeter”. De enda nytillkomna typerna är förskole- och skolplacering.
+
+Negation, dåtid, hypotetiska frågor, alternativ och rättelser redovisas separat från ärendetypen. Avgränsade stavningsförslag kräver bekräftelse. Flera mål visas som `identified_goals` med källtext och språkmarkörer i ärendets JSON. De skapar ännu inte flera beständiga ärenden; uppgifter från olika mål blandas inte. Se [språkregler och begränsningar](docs/language.md).
 
 ## Verifiera
 
@@ -41,14 +46,14 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 100 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, kompletteringsloop, omladdning, lokal fritext och stoppad automatisering. GitHub Actions kör samma kontroller.
+Domän- och API-tester använder riktig SQLite med komplettering, bedömning och återöppning för 102 nationella och 100 äldre scenarier. Alla 290 kommunnamn, behörighetsisolering och signerade OIDC-tokens provas. Runtime-testet kör byggd Worker med workerd/D1. Playwright provar dator och mobil, kommunbyte, automatiskt ärendetypbyte, långsamma sparningar, omladdning, lokal fritext och osäkra tolkningar. GitHub Actions kör samma kontroller.
 
 ## Kodens delar
 
 | Del | Ansvar |
 | --- | --- |
 | `src/domain/restaurant.mjs` | Versionsatt scenario, fält, villkor, myndigheter och kontrollerade källor |
-| `src/domain/catalog-data.mjs`, `catalog.mjs` | 100 versionerade scenarier i tio områden med egna frågor och minimala datapaket |
+| `src/domain/catalog-data.mjs`, `catalog.mjs` | 102 nationella scenarier och 100 bevarade äldre avtal i tio områden med egna frågor och minimala datapaket |
 | `src/domain/intake-parser.mjs`, `extractors.mjs`, `parser.mjs` | Lokal deterministisk parser: adresser, datum, synonymer, felstavning, negation och osäkerhet |
 | `src/domain/core.mjs` | Validering, frågeprioritering, regelmotor och tillståndsövergångar |
 | `src/domain/municipalities.mjs`, `national-scenarios.mjs`, `authority-routing.mjs` | Nationell tolkning och kommunavgränsade aktörsroller |
@@ -59,3 +64,9 @@ Domän- och API-tester använder riktig SQLite med komplettering, bedömning och
 | `db/schema.ts`, `drizzle/` | Databasschema och migrationshistorik |
 
 Se [arkitektur](docs/architecture.md), [drift](docs/deployment.md) och [produktionskontrakt](docs/production.md). OIDC-stödet behöver konfigureras med en verklig identitetsleverantör. Produktionsintag är stängt tills lokala profiler och anslutna mottagare är godkända.
+
+
+Version 0.5.0 förbättrar sparstatus, återhämtning vid nätfel och versionskonflikter, fältfel, tangentbordsfokus och skillnaden mellan tolkade och bekräftade uppgifter. Testläget stoppar vanliga personnummerformat i text och källutdrag. [Genomgång mot myndighetsvägledning och kommunala exempel](docs/service-audit.md) beskriver åtgärder och kvarvarande produktionshinder. Antalet ärendetyper är oförändrat.
+
+
+Version 0.5.1 öppnar alltid en tom arbetsyta, även efter omladdning. Ett befintligt utkast visas först efter valet **Återuppta utkast**. Nytt utkast skapas när användaren skriver, inte vid sidöppning. Tidigare utkast bevaras när en ny beskrivning påbörjas. Testa lokalt med separat testdatabas; lägg inte exempel i användarens delade, publicerade webbläsarsession.
